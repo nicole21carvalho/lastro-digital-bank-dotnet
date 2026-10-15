@@ -33,10 +33,24 @@ public sealed class Cadastro(IDocumentSession sessao, TimeProvider relogio)
         return new ContaCriada(contaId, NumeroDaConta.Agencia, numero);
     }
 
+    public async Task<Conta> AlterarLimiteNoturno(Guid contaId, Dinheiro novo, CancellationToken ct)
+    {
+        var stream = await sessao.Events.FetchForExclusiveWriting<Conta>(contaId, ct);
+        var conta = stream.Aggregate is { Tipo: TipoDeConta.Cliente } cliente
+            ? cliente
+            : throw new RegraVioladaException(Erros.ContaNaoEncontrada, "Conta não encontrada.");
+        var alterado = conta.AlterarLimiteNoturno(novo, relogio.GetUtcNow());
+        stream.AppendOne(alterado);
+        await sessao.SaveChangesAsync(ct);
+        return conta.Aplicar(alterado);
+    }
+
     // O Marten embrulha o erro do PostgreSQL (às vezes num AggregateException): procura na cadeia toda.
-    private static bool ViolouUnicidade(Exception erro) => erro switch
+    // Num Insert com id repetido, ele já troca o erro pela própria exceção, sem o erro original dentro.
+    internal static bool ViolouUnicidade(Exception erro) => erro switch
     {
         PostgresException { SqlState: PostgresErrorCodes.UniqueViolation } => true,
+        JasperFx.DocumentAlreadyExistsException => true,
         AggregateException agregado => agregado.InnerExceptions.Any(ViolouUnicidade),
         { InnerException: { } interna } => ViolouUnicidade(interna),
         _ => false,

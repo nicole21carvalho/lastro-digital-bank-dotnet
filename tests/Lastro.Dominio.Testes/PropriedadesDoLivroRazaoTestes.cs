@@ -45,7 +45,7 @@ public class PropriedadesDoLivroRazaoTestes
             {
                 var lancamento = Lancamento.Transferir(
                     Contas[origem], Contas[destino], new Dinheiro(centavos), tipo, "", Guid.CreateVersion7(),
-                    Inicio.AddMinutes(Eventos.Count));
+                    Inicio.AddSeconds(Eventos.Count));
                 Contas[origem] = Contas[origem].Aplicar(lancamento.Debito);
                 Contas[destino] = Contas[destino].Aplicar(lancamento.Credito);
                 Eventos.AddRange([lancamento.Debito, lancamento.Credito]);

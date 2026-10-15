@@ -19,4 +19,11 @@ public static class Erros
     public const string ChaveDeIdempotenciaReutilizada = "chave-de-idempotencia-reutilizada";
     public const string ChaveDeIdempotenciaInvalida = "chave-de-idempotencia-invalida";
     public const string ContaOcupada = "conta-ocupada";
+    public const string LimiteNoturnoExcedido = "limite-noturno-excedido";
+    public const string LimiteInvalido = "limite-invalido";
+    public const string ChavePixInvalida = "chave-pix-invalida";
+    public const string ChavePixJaCadastrada = "chave-pix-ja-cadastrada";
+    public const string ChavePixNaoEncontrada = "chave-pix-nao-encontrada";
+    public const string LimiteDeChaves = "limite-de-chaves";
+    public const string ChaveDeOutroTitular = "chave-de-outro-titular";
 }

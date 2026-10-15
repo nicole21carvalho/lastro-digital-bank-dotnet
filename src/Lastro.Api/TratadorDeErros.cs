@@ -13,10 +13,10 @@ public sealed class TratadorDeErros(IProblemDetailsService problemas) : IExcepti
 {
     public static int StatusDe(string codigo) => codigo switch
     {
-        Erros.ContaNaoEncontrada => StatusCodes.Status404NotFound,
+        Erros.ContaNaoEncontrada or Erros.ChavePixNaoEncontrada => StatusCodes.Status404NotFound,
         Erros.ChaveDeIdempotenciaInvalida => StatusCodes.Status400BadRequest,
-        Erros.CpfJaCadastrado or Erros.ChaveDeIdempotenciaReutilizada or Erros.ContaOcupada =>
-            StatusCodes.Status409Conflict,
+        Erros.CpfJaCadastrado or Erros.ChaveDeIdempotenciaReutilizada or Erros.ContaOcupada
+            or Erros.ChavePixJaCadastrada => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status422UnprocessableEntity,
     };
 

@@ -12,9 +12,19 @@ public sealed record AbrirContaPedido([Required, StringLength(120, MinimumLength
 
 public sealed record DepositoPedido(decimal Valor);
 
-public sealed record PixPedido(Guid Origem, Guid Destino, decimal Valor, [StringLength(140)] string? Descricao);
+/// <summary>Pix para uma chave (o normal) ou direto para o id de uma conta do Lastro.</summary>
+public sealed record PixPedido(Guid Origem, Guid? Destino, string? Chave, decimal Valor, [StringLength(140)] string? Descricao);
 
-public sealed record ContaResposta(Guid Id, string Agencia, string Numero, TipoDeConta Tipo, decimal Saldo);
+public sealed record ChavePedido(TipoDeChave Tipo, string? Valor);
+
+public sealed record LimitePedido(decimal Valor);
+
+public sealed record AumentoResposta(decimal Valor, DateTimeOffset ValeDesde);
+
+public sealed record LimiteResposta(decimal LimiteNoturno, AumentoResposta? AumentoPendente);
+
+public sealed record ContaResposta(
+    Guid Id, string Agencia, string Numero, TipoDeConta Tipo, decimal Saldo, LimiteResposta Limites);
 
 public sealed record SaldoResposta(Guid ContaId, decimal Saldo, DateTimeOffset? Em);
 
@@ -48,7 +58,25 @@ public static partial class Endpoints
         contas.MapGet("/{id:guid}", async (Guid id, IQuerySession consulta, CancellationToken ct) =>
         {
             var conta = await consulta.LoadAsync<Conta>(id, ct) ?? throw NaoEncontrada();
-            return TypedResults.Ok(new ContaResposta(conta.Id, NumeroDaConta.Agencia, conta.Numero, conta.Tipo, conta.Saldo.Reais));
+            return TypedResults.Ok(new ContaResposta(
+                conta.Id, NumeroDaConta.Agencia, conta.Numero, conta.Tipo, conta.Saldo.Reais, Limites(conta)));
+        });
+        contas.MapPut("/{id:guid}/limite-noturno", async (
+            Guid id, LimitePedido pedido, Cadastro cadastro, CancellationToken ct) =>
+            TypedResults.Ok(Limites(await cadastro.AlterarLimiteNoturno(id, Dinheiro.DeReais(pedido.Valor), ct))));
+
+        var chaves = contas.MapGroup("/{id:guid}/chaves").WithTags("Chaves Pix");
+        chaves.MapPost("/", async (Guid id, ChavePedido pedido, ChavesPix dict, CancellationToken ct) =>
+        {
+            var chave = await dict.Cadastrar(id, pedido.Tipo, pedido.Valor, ct);
+            return TypedResults.Created($"/contas/{id}/chaves/{Uri.EscapeDataString(chave.Chave)}", chave);
+        });
+        chaves.MapGet("/", async (Guid id, ChavesPix dict, CancellationToken ct) =>
+            TypedResults.Ok(await dict.Listar(id, ct)));
+        chaves.MapDelete("/{chave}", async (Guid id, string chave, ChavesPix dict, CancellationToken ct) =>
+        {
+            await dict.Excluir(id, chave, ct);
+            return TypedResults.NoContent();
         });
         contas.MapGet("/{id:guid}/saldo", ConsultarSaldo);
         contas.MapGet("/{id:guid}/extrato", ConsultarExtrato);
@@ -64,13 +92,23 @@ public static partial class Endpoints
 
         app.MapPost("/pix", async (
             PixPedido pedido, [FromHeader(Name = "Idempotency-Key")] string? chave,
-            Movimentacoes movimentacoes, HttpContext http, CancellationToken ct) =>
+            Movimentacoes movimentacoes, ChavesPix dict, HttpContext http, CancellationToken ct) =>
         {
+            var destino = (pedido.Destino, pedido.Chave) switch
+            {
+                ({ } conta, null) => conta,
+                (null, { } chavePix) => await dict.ContaDa(chavePix, ct),
+                _ => throw new RegraVioladaException(Erros.ValorInvalido, "Informe a chave Pix ou a conta de destino (só uma)."),
+            };
             var resultado = await movimentacoes.Executar(
-                new PedidoDeMovimentacao(pedido.Origem, pedido.Destino, Dinheiro.DeReais(pedido.Valor),
+                new PedidoDeMovimentacao(pedido.Origem, destino, Dinheiro.DeReais(pedido.Valor),
                     TipoDeLancamento.Pix, pedido.Descricao?.Trim() ?? "", Chave(chave)), ct);
             return Responder(resultado, http);
         }).WithTags("Pix");
+
+        // A tela "confira antes de enviar": quem recebe, sem expor o titular inteiro.
+        app.MapGet("/pix/chaves/{chave}", async (string chave, ChavesPix dict, CancellationToken ct) =>
+            TypedResults.Ok(await dict.Consultar(chave, ct))).WithTags("Pix");
 
         app.MapGet("/lancamentos/{id:guid}", ConsultarLancamento).WithTags("Livro-razão");
         app.MapGet("/livro-razao/conferencia", Conferir).WithTags("Livro-razão");
@@ -85,6 +123,10 @@ public static partial class Endpoints
 
     private static RegraVioladaException NaoEncontrada() =>
         new(Erros.ContaNaoEncontrada, "Conta não encontrada.");
+
+    private static LimiteResposta Limites(Conta conta) => new(
+        conta.LimiteNoturno.Reais,
+        conta.AumentoPendente is { } aumento ? new AumentoResposta(aumento.Valor.Reais, aumento.ValeDesde) : null);
 
     private static IResult Responder(ResultadoDaMovimentacao resultado, HttpContext http)
     {

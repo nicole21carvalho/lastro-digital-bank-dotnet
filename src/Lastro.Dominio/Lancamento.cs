@@ -44,6 +44,18 @@ public sealed record Lancamento(ValorDebitado Debito, ValorCreditado Credito)
         {
             throw new RegraVioladaException(Erros.SaldoInsuficiente, "Saldo insuficiente.");
         }
+        if (tipo == TipoDeLancamento.Pix && origem.Tipo == TipoDeConta.Cliente && PeriodoNoturno.Contem(em))
+        {
+            var limite = origem.LimiteNoturnoEm(em);
+            var disponivel = limite - origem.UsadoNaNoite(em);
+            if (valor > disponivel)
+            {
+                throw new RegraVioladaException(
+                    Erros.LimiteNoturnoExcedido,
+                    $"Das 20h às 6h, o limite de Pix é de {limite} por noite. Ainda dá para enviar "
+                    + $"{(disponivel > Dinheiro.Zero ? disponivel : Dinheiro.Zero)}.");
+            }
+        }
 
         return new Lancamento(
             new ValorDebitado(origem.Id, lancamentoId, tipo, valor, destino.Id, historico, em),

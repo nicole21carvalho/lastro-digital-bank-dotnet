@@ -4,18 +4,19 @@ Núcleo de um banco digital em que **o dinheiro nunca some nem duplica**: livro-
 Pix com chave de idempotência e event sourcing sobre o PostgreSQL. Mil Pix simultâneos saindo da mesma conta
 com saldo para cem: passam exatamente cem.
 
-> Em construção. Pronto até agora: livro-razão, contas, depósito, Pix entre contas do Lastro, idempotência e
-> testes de concorrência (fase 1 de 5). Próximas: chaves Pix e Pix para outros bancos, login com passkeys,
-> observabilidade com .NET Aspire e publicação.
+> Em construção. Pronto até agora: livro-razão, contas, depósito, Pix entre contas do Lastro, idempotência,
+> testes de concorrência, chaves Pix e limite noturno (fases 1 e 2 de 5). Próximas: Pix para outros bancos
+> (com estorno), login com passkeys e antifraude, observabilidade com .NET Aspire e publicação.
 
 ## Como o dinheiro anda
 
 ```
-POST /pix  { origem: Ana, destino: Bia, valor: 30,50 }    Idempotency-Key: 7f3c...
+POST /pix  { origem: Ana, chave: "bia@exemplo.com", valor: 30,50 }    Idempotency-Key: 7f3c...
   │
+  ├─ acha a conta da chave no diretório de chaves (o DICT, simulado)
   ├─ trava as contas de Ana e Bia (SELECT ... FOR UPDATE), sempre na ordem do id
-  ├─ a chave já foi usada?  sim → devolve a resposta guardada, sem mexer em nada
-  ├─ regras do domínio: valor > 0, saldo suficiente, descrição até 140 caracteres
+  ├─ a chave de idempotência já foi usada?  sim → devolve a resposta guardada, sem mexer em nada
+  ├─ regras do domínio: valor > 0, saldo suficiente, limite noturno, descrição até 140 caracteres
   └─ uma transação só:
        ValorDebitado  Ana  -30,50 ┐ mesmo lançamento,
        ValorCreditado Bia  +30,50 ┘ mesmo valor
@@ -51,6 +52,19 @@ trava e gravada *na mesma transação* do lançamento: vinte envios simultâneos
 Repetir a chave devolve a mesma resposta (inclusive uma recusa por falta de saldo), com o cabeçalho
 `Idempotent-Replayed`. A mesma chave com outro valor é recusada.
 
+**Limite noturno como na regra do Banco Central.** Das 20h às 6h (horário de Brasília), um cliente pode enviar
+até R$ 1.000,00 em Pix *por noite*: a regra é por período, e não por transação. Ele pode mudar o limite, mas um
+aumento só vale 24 horas depois. É a defesa contra o golpe em que o criminoso convence a vítima a subir o limite
+na hora. Uma redução vale na hora. Como o uso da noite faz parte do estado da conta, que está travada, vinte Pix
+de R$ 100 disparados juntos às 21h param exatamente no décimo.
+
+**Chaves Pix no formato do DICT.** CPF só com números, e-mail em minúsculas, celular em `+55DD9XXXXXXXX` e chave
+aleatória em UUID, como no diretório do Banco Central. A chave CPF só pode ser o CPF do próprio titular, cada
+conta tem até 5 chaves e a mesma chave nunca fica em duas contas: o id do registro é a própria chave, então o
+PostgreSQL garante, mesmo com cinco contas disputando a chave ao mesmo tempo. Antes de enviar, `GET
+/pix/chaves/{chave}` mostra só o necessário para a pessoa reconhecer quem recebe (`Beatriz M. S.`,
+`***.456.789-**`). A chave de outra conta responde igual a uma que não existe, e assim nada vaza.
+
 **Dinheiro em centavos inteiros.** `Dinheiro` é um `long` de centavos: R$ 0,10 + R$ 0,20 é exatamente R$ 0,30,
 fração de centavo é recusada na entrada e uma soma que estoura o limite falha em vez de virar negativa.
 
@@ -64,12 +78,15 @@ fração de centavo é recusada na entrada e uma soma que estoura o limite falha
 ## Testes
 
 ```bash
-dotnet test     # 51 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
+dotnet test     # 93 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
 ```
 
 - **Propriedades (FsCheck)**: centenas de sequências aleatórias de depósitos e Pix entre quatro clientes. Em
   todas, o dinheiro não é criado nem some, nenhum cliente fica negativo, o livro fecha e repassar o histórico
-  reconstrói o mesmo saldo. Quando uma falha, o FsCheck reduz ao menor exemplo que quebra.
+  reconstrói o mesmo saldo. E, para qualquer sequência de Pix numa noite, o que sai nunca passa do limite.
+  Quando uma falha, o FsCheck reduz ao menor exemplo que quebra.
+- **Relógio nas mãos do teste**: com o `FakeTimeProvider`, os testes do limite noturno "são 21h" e pulam 24
+  horas para ver o aumento passar a valer.
 - **Concorrência, no PostgreSQL de verdade**: mil Pix simultâneos com saldo para cem (passam exatamente cem e
   novecentos são recusados), 400 Pix cruzados entre duas contas (nenhum trava) e 250 depósitos em paralelo.
 - **Idempotência**: repetição, recusa lembrada, chave reaproveitada e vinte envios simultâneos.

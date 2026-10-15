@@ -29,6 +29,9 @@ public sealed record ValorCreditado(
     string Historico,
     DateTimeOffset Em);
 
+/// <summary>O cliente mudou o limite noturno. Se foi um aumento, só vale a partir de <c>ValeDesde</c>.</summary>
+public sealed record LimiteNoturnoAlterado(Guid ContaId, Dinheiro Limite, DateTimeOffset ValeDesde, DateTimeOffset Em);
+
 /// <summary>Metade de um lançamento: sempre há um <see cref="ValorCreditado"/> com o mesmo id e valor.</summary>
 public sealed record ValorDebitado(
     Guid ContaId,

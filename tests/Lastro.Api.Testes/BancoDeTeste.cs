@@ -3,6 +3,8 @@ using System.Text.Json;
 using System.Text.Json.Serialization;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.Extensions.DependencyInjection;
 using Testcontainers.PostgreSql;
 
 [assembly: AssemblyFixture(typeof(Lastro.Api.Testes.BancoDeTeste))]
@@ -21,8 +23,14 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
         Converters = { new JsonStringEnumConverter() },
     };
 
-    public HttpClient Cliente() =>
-        (_fabrica ?? throw new InvalidOperationException("O banco de teste ainda não subiu.")).CreateClient();
+    public HttpClient Cliente() => Fabrica.CreateClient();
+
+    /// <summary>Uma API com o relógio nas mãos do teste (mesmo banco de dados).</summary>
+    public HttpClient Cliente(TimeProvider relogio) =>
+        Fabrica.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton(relogio))).CreateClient();
+
+    private WebApplicationFactory<Program> Fabrica =>
+        _fabrica ?? throw new InvalidOperationException("O banco de teste ainda não subiu.");
 
     public async ValueTask InitializeAsync()
     {
@@ -81,6 +89,20 @@ public static class Api
     public static Task<HttpResponseMessage> Pix(
         this HttpClient http, Guid origem, Guid destino, decimal valor, string? chave = null, string? descricao = null) =>
         Enviar(http, "/pix", new { origem, destino, valor, descricao }, chave ?? NovaChave());
+
+    public static Task<HttpResponseMessage> PixPorChave(this HttpClient http, Guid origem, string chavePix, decimal valor) =>
+        Enviar(http, "/pix", new { origem, chave = chavePix, valor }, NovaChave());
+
+    public static Task<HttpResponseMessage> CadastrarChave(this HttpClient http, Guid conta, string tipo, string? valor = null) =>
+        http.PostAsJsonAsync($"/contas/{conta}/chaves", new { tipo, valor });
+
+    public static async Task<(Conta Conta, string Cpf)> AbrirContaComCpf(this HttpClient http, string nome)
+    {
+        var cpf = NovoCpf();
+        var resposta = await http.PostAsJsonAsync("/contas", new { nome, cpf });
+        resposta.EnsureSuccessStatusCode();
+        return ((await resposta.Content.ReadFromJsonAsync<Conta>(BancoDeTeste.Json))!, cpf);
+    }
 
     public static async Task<decimal> Saldo(this HttpClient http, Guid conta, DateTimeOffset? em = null)
     {

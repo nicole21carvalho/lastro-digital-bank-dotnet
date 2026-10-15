@@ -18,6 +18,7 @@ builder.Services.AddArmazenamento(builder.Configuration.GetConnectionString("Las
 builder.Services.AddHostedService<CriarContasInternas>();
 builder.Services.AddScoped<Cadastro>();
 builder.Services.AddScoped<Movimentacoes>();
+builder.Services.AddScoped<ChavesPix>();
 
 var app = builder.Build();
 

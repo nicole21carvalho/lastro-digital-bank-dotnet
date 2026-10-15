@@ -18,7 +18,8 @@ public static class ConfiguracaoDoMarten
         {
             opcoes.Connection(conexao);
             opcoes.DatabaseSchemaName = Esquema;
-            opcoes.Events.AddEventTypes([typeof(ContaAberta), typeof(ValorCreditado), typeof(ValorDebitado)]);
+            opcoes.Events.AddEventTypes(
+                [typeof(ContaAberta), typeof(ValorCreditado), typeof(ValorDebitado), typeof(LimiteNoturnoAlterado)]);
             // No modo "rich", o número de sequência de cada evento é reservado antes de as
             // projeções rodarem. No modo rápido (o padrão), ele só nasce dentro do banco, e o
             // extrato não saberia a ordem dos lançamentos. Num banco, a ordem vale mais.
@@ -31,6 +32,7 @@ public static class ConfiguracaoDoMarten
             // Um CPF, um titular: o próprio banco garante, mesmo com dois cadastros ao mesmo tempo.
             opcoes.Schema.For<Titular>().UniqueIndex(t => t.Cpf);
             opcoes.Schema.For<LinhaDoExtrato>().Index(l => l.ContaId);
+            opcoes.Schema.For<RegistroDeChave>().Index(c => c.ContaId);
 
             // Números de conta sem repetição e sem buraco por corrida: uma sequência do PostgreSQL.
             opcoes.Storage.ExtendedSchemaObjects.Add(new Sequence(

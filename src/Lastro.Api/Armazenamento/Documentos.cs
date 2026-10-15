@@ -8,6 +8,12 @@ namespace Lastro.Api.Armazenamento;
 /// </summary>
 public sealed record Titular(Guid Id, string Nome, string Cpf);
 
+/// <summary>
+/// Uma chave do diretório de chaves Pix (o DICT, simulado). O id é a própria chave, já
+/// normalizada: a mesma chave em duas contas é impossível pelo próprio banco de dados.
+/// </summary>
+public sealed record RegistroDeChave(string Id, TipoDeChave Tipo, Guid ContaId, DateTimeOffset CriadaEm);
+
 /// <summary>Uma linha do extrato (modelo de leitura do CQRS), gerada dos eventos na mesma transação.</summary>
 public sealed record LinhaDoExtrato(
     Guid Id,

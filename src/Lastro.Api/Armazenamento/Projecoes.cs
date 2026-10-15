@@ -16,6 +16,8 @@ public sealed partial class ContaProjection : SingleStreamProjection<Conta, Guid
     public static Conta Apply(ValorCreditado credito, Conta conta) => conta.Aplicar(credito);
 
     public static Conta Apply(ValorDebitado debito, Conta conta) => conta.Aplicar(debito);
+
+    public static Conta Apply(LimiteNoturnoAlterado alterado, Conta conta) => conta.Aplicar(alterado);
 }
 
 /// <summary>Cada crédito ou débito vira uma linha do extrato (com sinal: débito é negativo).</summary>
