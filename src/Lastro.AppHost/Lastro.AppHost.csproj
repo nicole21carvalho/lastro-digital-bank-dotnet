@@ -1,0 +1,19 @@
+<Project Sdk="Aspire.AppHost.Sdk/13.6.1">
+  <!-- O ambiente inteiro com um comando: "dotnet run" nesta pasta. -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <!-- Sem o pacote do Aspire CLI: ele tenta instalar um certificado HTTPS de desenvolvimento
+         entre os confiáveis do Windows, e o Lastro local roda em HTTP, sem precisar disso. -->
+    <AspireUseCliBundle>false</AspireUseCliBundle>
+    <!-- As senhas geradas na primeira execução ficam nos user-secrets desta máquina, fora do repositório. -->
+    <UserSecretsId>lastro-apphost</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Aspire.Hosting.PostgreSQL" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Lastro.Api\Lastro.Api.csproj" />
+  </ItemGroup>
+</Project>

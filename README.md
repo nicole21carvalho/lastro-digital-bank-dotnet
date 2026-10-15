@@ -4,10 +4,17 @@ Núcleo de um banco digital em que **o dinheiro nunca some nem duplica**: livro-
 Pix com chave de idempotência e event sourcing sobre o PostgreSQL. Mil Pix simultâneos saindo da mesma conta
 com saldo para cem: passam exatamente cem.
 
-> Em construção. Pronto até agora: livro-razão, contas, depósito, Pix entre contas do Lastro, idempotência,
-> testes de concorrência, chaves Pix, limite noturno, Pix para outros bancos (com devolução e recebimento
-> assinado), login, dono da conta, limites de uso, antifraude e auditoria (fases 1 a 4 de 5). Próxima:
-> observabilidade com .NET Aspire, Keycloak com passkeys no ambiente completo, CI e publicação.
+[![CI](https://github.com/nicole21carvalho/lastro-digital-bank-dotnet/actions/workflows/ci.yml/badge.svg)](https://github.com/nicole21carvalho/lastro-digital-bank-dotnet/actions/workflows/ci.yml)
+
+- **Livro-razão com partidas dobradas**, event sourcing (Marten) e CQRS: a soma de todos os saldos é sempre zero.
+- **Pix completo**: chaves no formato do DICT, limite noturno como na regra do Banco Central, Pix para outros
+  bancos numa saga com devolução e recebimento por aviso assinado (HMAC).
+- **Idempotência e concorrência provadas** no PostgreSQL de verdade, com testes de propriedade (FsCheck).
+- **Segurança de banco**: login OAuth 2.0 com passkeys (Keycloak), dono da conta pelo token, limites de uso,
+  antifraude e trilha de auditoria.
+- **Um comando sobe tudo** com o .NET Aspire, com traces e métricas de cada Pix no painel.
+
+![Trace de um Pix no painel do Aspire: a requisição, o span "movimentar" e cada consulta ao PostgreSQL](docs/img/aspire-trace-pix.png)
 
 ## Como o dinheiro anda
 
@@ -37,6 +44,22 @@ POST /pix  { chave: "maria@banco-exemplo.example" }  → 202 Accepted, EndToEndI
        recusado      → "Pix em trânsito" -40 → Ana +40            (devolução)
        sem resposta  → consulta pelo EndToEndId e reenvia; nunca devolve sem ter certeza
 ```
+
+## Ver funcionando
+
+```bash
+dotnet run --project src/Lastro.AppHost
+```
+
+O .NET Aspire sobe o PostgreSQL, o Keycloak (com o realm `lastro` já importado) e a API, e abre um painel com
+logs, traces e métricas de tudo. As senhas do ambiente são geradas na primeira execução e ficam nos
+user-secrets da máquina, fora do repositório.
+
+| Painel do Aspire | Login com passkey (Keycloak) |
+|---|---|
+| ![Recursos rodando no painel do Aspire](docs/img/aspire-recursos.png) | ![Tela de login do Lastro com "Entrar com chave de acesso"](docs/img/login-passkey.png) |
+| **Traces só de trabalho de verdade** | **Documentação da API (OpenAPI + Scalar)** |
+| ![Lista de traces: Pix, liquidação, extrato, conferência e auditoria](docs/img/aspire-traces.png) | ![Documentação da API no Scalar](docs/img/api-docs.png) |
 
 ## Decisões
 
@@ -127,6 +150,19 @@ tabelas (`Armazenamento:AplicarEsquemaNaSubida`). As outras sobem sem rodar DDL 
 com transações rodando derruba essas transações. Os testes pegaram as duas formas desse erro: uma réplica
 mudando funções do Marten enquanto a outra gravava, e uma tabela que o Marten só criaria no primeiro uso.
 
+## Observabilidade
+
+- **OpenTelemetry de ponta a ponta**: requisições, consultas ao PostgreSQL (Npgsql), conexões do Marten e
+  spans do próprio banco (`movimentar`, `liquidar pix`), exportados por OTLP para o painel do Aspire ou para
+  qualquer coletor.
+- **Métricas de negócio sem dado pessoal**: movimentações por tipo e resultado (`feito` ou o código da recusa),
+  distribuição dos valores e o desfecho das sagas de Pix para outros bancos. Nenhum valor de transação vai para
+  um span, e nenhum id de cliente vai para uma métrica.
+- **Ruído é defeito.** O primeiro painel mostrava um trace por segundo: era o trabalhador de liquidação
+  espiando a caixa de saída vazia (seriam 86 mil traces por dia) e, a cada 30 segundos, a checagem de saúde do
+  orquestrador. As duas consultas agora rodam sem instrumentação, e só o trabalho de verdade vira trace.
+- **Saúde em dois níveis**: `/saude` (o processo está de pé) e `/pronto` (e fala com o PostgreSQL).
+
 ## Mais decisões
 
 **Dinheiro em centavos inteiros.** `Dinheiro` é um `long` de centavos: R$ 0,10 + R$ 0,20 é exatamente R$ 0,30,
@@ -163,23 +199,34 @@ dotnet test     # 130 testes; os de integração sobem um PostgreSQL com Testcon
   conta interna do banco; limites de uso; antifraude; e a autoria de cada evento na auditoria. Os tokens dos
   testes são assinados na hora, com uma chave RSA criada para a rodada.
 
+Além dos testes, o fluxo inteiro foi conferido no ambiente do Aspire com tokens de verdade do Keycloak: abrir
+contas, depositar, Pix por chave, Pix para outro banco (liquidado e devolvido), recusa por saldo, `404` na conta
+de outra pessoa, extrato, conferência do livro e auditoria.
+
+**No CI** (GitHub Actions, com as actions fixadas por SHA): formatação (`dotnet format`), build com os
+analisadores e aviso tratado como erro, os testes com Testcontainers, **CodeQL** (análise de segurança do
+código C#), **osv-scanner** nos `packages.lock.json` e o build da imagem Docker. O Dependabot atualiza
+pacotes, actions e imagens toda semana.
+
 Os bancos, as pessoas e os ISPBs do Banco Central simulado são fictícios (domínios `.example`).
 
-## Rodando
+## Rodando sem o Aspire
 
 ```bash
-docker run -d --name lastro-db -e POSTGRES_PASSWORD=<uma senha> -p 127.0.0.1:5432:5432 postgres:18-alpine
-export ConnectionStrings__Lastro="Host=localhost;Database=postgres;Username=postgres;Password=<a senha>"
-export ASPNETCORE_ENVIRONMENT=Development
-export Spi__Segredo="$(openssl rand -hex 32)"   # para receber Pix de outros bancos (aviso assinado)
-export Autenticacao__Emissor="http://localhost:8180/realms/lastro"   # o provedor de identidade (OIDC)
-export Autenticacao__ExigirHttps=false                                # só em desenvolvimento
-dotnet run --project src/Lastro.Api
+docker build -t lastro-api .        # imagem "chiseled": sem shell, sem gerenciador de pacotes, usuário sem privilégios
+docker run -p 8080:8080 \
+  -e ConnectionStrings__Lastro="Host=...;Database=lastro;Username=...;Password=..." \
+  -e Autenticacao__Emissor="https://seu-keycloak/realms/lastro" \
+  -e Spi__Segredo="$(openssl rand -hex 32)" \
+  lastro-api
 ```
 
-A documentação da API (OpenAPI + Scalar) fica em http://localhost:5000/docs.
+O realm do Keycloak (app com PKCE, audiência `lastro-api`, papel `operador` e passkeys) está em
+[`infra/keycloak/lastro-realm.json`](infra/keycloak/lastro-realm.json). Com várias réplicas, deixe
+`Armazenamento__AplicarEsquemaNaSubida=false` em todas menos uma.
 
 ## Stack
 
-.NET 10 · C# 14 · ASP.NET Core (minimal APIs, validação nativa, OpenAPI) · Marten 9 (event store e documentos)
-· PostgreSQL 18 · xUnit v3 · FsCheck · Testcontainers
+.NET 10 · C# 14 · ASP.NET Core (minimal APIs, validação nativa, OpenAPI, rate limiting) · Marten 9 (event store
+e documentos) · PostgreSQL 18 · Keycloak 26 (OAuth 2.0, passkeys) · .NET Aspire 13 · OpenTelemetry · xUnit v3 ·
+FsCheck · Testcontainers · Docker (chiseled) · GitHub Actions · CodeQL

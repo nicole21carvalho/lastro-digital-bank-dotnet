@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+# O GITHUB_TOKEN so le o codigo; so o job do CodeQL ganha permissao para publicar alertas.
+permissions:
+  contents: read
+
+# Actions fixadas por SHA do commit, e nao por tag: tag pode ser movida para outro
+# codigo depois; SHA nao. O comentario diz a versao, e o Dependabot abre PR quando sai outra.
+
+env:
+  DOTNET_CLI_TELEMETRY_OPTOUT: "1"
+  DOTNET_NOLOGO: "1"
+
+jobs:
+  testes:
+    name: Formatacao, build e testes
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - name: Restaurar (travado pelos packages.lock.json)
+        run: dotnet restore --locked-mode
+
+      - name: Formatacao (dotnet format)
+        run: dotnet format --verify-no-changes --no-restore
+
+      - name: Build (aviso e erro, com os analisadores ligados)
+        run: dotnet build --no-restore -c Release
+
+      - name: Testes (os de integracao sobem um PostgreSQL com Testcontainers)
+        run: dotnet test --no-build -c Release
+
+  codeql:
+    name: CodeQL (analise de seguranca do codigo)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6.0.0
+        with:
+          global-json-file: global.json
+
+      - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+        with:
+          languages: csharp
+          build-mode: manual
+          queries: security-and-quality
+
+      - run: dotnet build -c Release
+
+      - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
+
+  vulnerabilidades:
+    name: Dependencias com vulnerabilidade conhecida
+    runs-on: ubuntu-latest
+    env:
+      OSV_VERSAO: v2.6.0
+      OSV_SHA256: ca69b3d3cd08f889a49dc0a383122f71cc528b83803671df5fd874d97485b108
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Instalar osv-scanner
+        run: |
+          curl -sSfL -o osv-scanner \
+            "https://github.com/google/osv-scanner/releases/download/${OSV_VERSAO}/osv-scanner_linux_amd64"
+          echo "${OSV_SHA256}  osv-scanner" | sha256sum --check --strict
+          chmod +x osv-scanner
+
+      - name: Varredura dos packages.lock.json
+        run: |
+          find . -name packages.lock.json -not -path "*/obj/*" -print0 \
+            | xargs -0 -n1 ./osv-scanner scan source -L
+
+  imagem:
+    name: Imagem Docker · build
+    runs-on: ubuntu-latest
+    needs: [testes, vulnerabilidades]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max

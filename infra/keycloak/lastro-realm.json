@@ -1,0 +1,71 @@
+{
+  "realm": "lastro",
+  "displayName": "Lastro",
+  "enabled": true,
+  "internationalizationEnabled": true,
+  "supportedLocales": ["pt-BR", "en"],
+  "defaultLocale": "pt-BR",
+  "sslRequired": "external",
+  "registrationAllowed": true,
+  "registrationEmailAsUsername": true,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": false,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "accessTokenLifespan": 300,
+  "webAuthnPolicyPasswordlessPasskeysEnabled": true,
+  "webAuthnPolicyPasswordlessRpEntityName": "Lastro",
+  "webAuthnPolicyPasswordlessUserVerificationRequirement": "required",
+  "roles": {
+    "realm": [
+      {
+        "name": "operador",
+        "description": "Funcionário do banco: depósito em caixa, conferência do livro-razão e auditoria"
+      }
+    ]
+  },
+  "clients": [
+    {
+      "clientId": "lastro-app",
+      "name": "App do Lastro",
+      "enabled": true,
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "serviceAccountsEnabled": false,
+      "redirectUris": ["http://localhost:*"],
+      "webOrigins": ["+"],
+      "attributes": {
+        "pkce.code.challenge.method": "S256",
+        "post.logout.redirect.uris": "+"
+      },
+      "protocolMappers": [
+        {
+          "name": "audiencia-lastro-api",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-audience-mapper",
+          "config": {
+            "included.custom.audience": "lastro-api",
+            "access.token.claim": "true",
+            "id.token.claim": "false"
+          }
+        },
+        {
+          "name": "papeis-em-roles",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-realm-role-mapper",
+          "config": {
+            "claim.name": "roles",
+            "multivalued": "true",
+            "jsonType.label": "String",
+            "access.token.claim": "true",
+            "id.token.claim": "false",
+            "userinfo.token.claim": "false"
+          }
+        }
+      ]
+    }
+  ]
+}

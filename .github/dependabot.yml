@@ -1,0 +1,28 @@
+# PR semanal quando sai versao nova. Sem isto, as actions fixadas por SHA e os pacotes
+# travados nos packages.lock.json envelheceriam em silencio.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+
+  - package-ecosystem: nuget
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      # Pacotes que sobem juntos; separados, um PR quebraria o outro.
+      opentelemetry:
+        patterns: ["OpenTelemetry*", "Npgsql.OpenTelemetry"]
+      aspnetcore:
+        patterns: ["Microsoft.AspNetCore.*", "Microsoft.Extensions.*"]
+      marten:
+        patterns: ["Marten*", "JasperFx*", "Weasel*"]
+      testes:
+        patterns: ["xunit*", "FsCheck*", "Testcontainers*"]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: weekly

@@ -79,6 +79,8 @@ internal sealed class BancoDeDadosResponde(IDocumentStore loja) : IHealthCheck
 {
     public async Task<HealthCheckResult> CheckHealthAsync(HealthCheckContext context, CancellationToken cancellationToken = default)
     {
+        // O orquestrador pergunta a cada poucos segundos: sem trace, como a requisição em si.
+        using var semTrace = SuppressInstrumentationScope.Begin();
         try
         {
             await using var consulta = loja.QuerySession();

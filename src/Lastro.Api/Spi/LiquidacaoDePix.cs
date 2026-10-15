@@ -4,6 +4,7 @@ using Lastro.Api.Armazenamento;
 using Lastro.Api.Operacoes;
 using Lastro.Dominio;
 using Marten;
+using OpenTelemetry;
 
 namespace Lastro.Api.Spi;
 
@@ -40,8 +41,11 @@ public sealed partial class LiquidacaoDePix(
     internal async Task<int> Rodada(CancellationToken ct)
     {
         IReadOnlyList<PixEmLiquidacao> pendentes;
-        await using (var consulta = loja.QuerySession())
+        // A espiada na caixa de saída roda a cada segundo, quase sempre vazia: sem trace
+        // (seriam 86 mil por dia de puro ruído). Só o trabalho de verdade aparece.
+        using (SuppressInstrumentationScope.Begin())
         {
+            await using var consulta = loja.QuerySession();
             var agora = relogio.GetUtcNow();
             pendentes = await consulta.Query<PixEmLiquidacao>()
                 .Where(p => p.Situacao == SituacaoDoPix.EmLiquidacao && p.ProximaTentativa <= agora)
@@ -49,6 +53,8 @@ public sealed partial class LiquidacaoDePix(
         }
         foreach (var pix in pendentes)
         {
+            using var atividade = Telemetria.Fonte.StartActivity("liquidar pix");
+            atividade?.SetTag("lastro.tentativa", pix.Tentativas + 1);
             await Processar(pix, ct);
         }
         return pendentes.Count;
@@ -83,13 +89,17 @@ public sealed partial class LiquidacaoDePix(
                     valor, $"Pix devolvido: {motivo}", agora, ct);
                 sessao.Store(atual with
                 {
-                    Situacao = SituacaoDoPix.Devolvido, Tentativas = tentativa, Motivo = motivo, ConcluidoEm = agora,
+                    Situacao = SituacaoDoPix.Devolvido,
+                    Tentativas = tentativa,
+                    Motivo = motivo,
+                    ConcluidoEm = agora,
                 });
                 break;
             default:
                 sessao.Store(atual with
                 {
-                    Tentativas = tentativa, ProximaTentativa = agora + SagaDoPixExterno.Espera(tentativa),
+                    Tentativas = tentativa,
+                    ProximaTentativa = agora + SagaDoPixExterno.Espera(tentativa),
                 });
                 break;
         }

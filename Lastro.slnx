@@ -1,6 +1,7 @@
 <Solution>
   <Folder Name="/src/">
     <Project Path="src/Lastro.Api/Lastro.Api.csproj" />
+    <Project Path="src/Lastro.AppHost/Lastro.AppHost.csproj" />
     <Project Path="src/Lastro.Dominio/Lastro.Dominio.csproj" />
   </Folder>
   <Folder Name="/tests/">

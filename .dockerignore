@@ -1,0 +1,12 @@
+**/bin
+**/obj
+**/TestResults
+.git
+.vs
+.idea
+tests
+infra
+src/Lastro.AppHost
+**/*.user
+.env
+.env.*
