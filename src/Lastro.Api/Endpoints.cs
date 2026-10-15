@@ -1,7 +1,9 @@
 using System.ComponentModel.DataAnnotations;
+using System.Text.Json;
 using System.Text.RegularExpressions;
 using Lastro.Api.Armazenamento;
 using Lastro.Api.Operacoes;
+using Lastro.Api.Spi;
 using Lastro.Dominio;
 using Marten;
 using Microsoft.AspNetCore.Mvc;
@@ -36,6 +38,10 @@ public sealed record ExtratoResposta(Guid ContaId, int Pagina, int Tamanho, int 
 public sealed record PartidaResposta(Guid ContaId, decimal Valor);
 
 public sealed record LancamentoResposta(Guid Id, TipoDeLancamento Tipo, string Descricao, DateTimeOffset Em, IReadOnlyList<PartidaResposta> Partidas);
+
+public sealed record PixParaOutroBancoResposta(
+    string EndToEndId, SituacaoDoPix Situacao, string Instituicao, decimal Valor, int Tentativas, string? Motivo,
+    DateTimeOffset CriadoEm, DateTimeOffset? ConcluidoEm);
 
 public sealed record ConferenciaResposta(
     decimal TotalDebitos, decimal TotalCreditos, int Lancamentos, decimal SomaDosSaldos, bool Fecha,
@@ -96,15 +102,44 @@ public static partial class Endpoints
         {
             var destino = (pedido.Destino, pedido.Chave) switch
             {
-                ({ } conta, null) => conta,
-                (null, { } chavePix) => await dict.ContaDa(chavePix, ct),
+                ({ } conta, null) => new DestinoDoPix(conta, null),
+                (null, { } chavePix) => await dict.Resolver(chavePix, ct),
                 _ => throw new RegraVioladaException(Erros.ValorInvalido, "Informe a chave Pix ou a conta de destino (só uma)."),
             };
+            // Para outro banco, o dinheiro vai para a conta de trânsito e a saga leva adiante.
             var resultado = await movimentacoes.Executar(
-                new PedidoDeMovimentacao(pedido.Origem, destino, Dinheiro.DeReais(pedido.Valor),
-                    TipoDeLancamento.Pix, pedido.Descricao?.Trim() ?? "", Chave(chave)), ct);
+                new PedidoDeMovimentacao(pedido.Origem, destino.Conta ?? ContasInternas.PixEmTransito,
+                    Dinheiro.DeReais(pedido.Valor), TipoDeLancamento.Pix, pedido.Descricao?.Trim() ?? "",
+                    Chave(chave), destino.OutroBanco), ct);
             return Responder(resultado, http);
         }).WithTags("Pix");
+
+        app.MapGet("/pix/{endToEndId}", async (string endToEndId, IQuerySession consulta, CancellationToken ct) =>
+            await consulta.LoadAsync<PixEmLiquidacao>(endToEndId, ct) is { } pix
+                ? Results.Ok(new PixParaOutroBancoResposta(pix.Id, pix.Situacao, pix.Instituicao,
+                    new Dinheiro(pix.Centavos).Reais, pix.Tentativas, pix.Motivo, pix.CriadoEm, pix.ConcluidoEm))
+                : Results.NotFound()).WithTags("Pix");
+
+        // O SPI avisa que chegou um Pix de outro banco. Sem assinatura válida, nem lê o corpo.
+        app.MapPost("/spi/recebimentos", async (
+            HttpRequest requisicao, Recebimentos recebimentos, IConfiguration configuracao, TimeProvider relogio,
+            CancellationToken ct) =>
+        {
+            if (configuracao["Spi:Segredo"] is not { Length: >= 32 } segredo)
+            {
+                return Results.Problem(title: "Recebimento de Pix desligado (sem Spi:Segredo).", statusCode: 503);
+            }
+            using var leitor = new StreamReader(requisicao.Body);
+            var corpo = await leitor.ReadToEndAsync(ct);
+            if (!AssinaturaDoSpi.Confere(segredo, requisicao.Headers[AssinaturaDoSpi.CabecalhoDaData],
+                    requisicao.Headers[AssinaturaDoSpi.Cabecalho], corpo, relogio.GetUtcNow()))
+            {
+                return Results.Unauthorized();
+            }
+            var aviso = JsonSerializer.Deserialize<AvisoDePix>(corpo, JsonSerializerOptions.Web)
+                ?? throw new RegraVioladaException(Erros.ValorInvalido, "Aviso vazio.");
+            return Results.Ok(await recebimentos.Receber(aviso, ct));
+        }).WithTags("SPI").ExcludeFromDescription();
 
         // A tela "confira antes de enviar": quem recebe, sem expor o titular inteiro.
         app.MapGet("/pix/chaves/{chave}", async (string chave, ChavesPix dict, CancellationToken ct) =>
@@ -134,6 +169,11 @@ public static partial class Endpoints
         {
             // Avisa o app que esta é a resposta guardada, e não uma operação nova.
             http.Response.Headers["Idempotent-Replayed"] = "true";
+        }
+        if (resultado.Feita is { ParaOutroBanco: { } fora } paraOutroBanco)
+        {
+            // Aceito: o dinheiro já saiu da conta, e a liquidação segue em segundo plano.
+            return TypedResults.Accepted($"/pix/{fora.EndToEndId}", paraOutroBanco);
         }
         if (resultado.Feita is { } feita)
         {

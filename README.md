@@ -5,8 +5,9 @@ Pix com chave de idempotência e event sourcing sobre o PostgreSQL. Mil Pix simu
 com saldo para cem: passam exatamente cem.
 
 > Em construção. Pronto até agora: livro-razão, contas, depósito, Pix entre contas do Lastro, idempotência,
-> testes de concorrência, chaves Pix e limite noturno (fases 1 e 2 de 5). Próximas: Pix para outros bancos
-> (com estorno), login com passkeys e antifraude, observabilidade com .NET Aspire e publicação.
+> testes de concorrência, chaves Pix, limite noturno e Pix para outros bancos, com devolução e recebimento
+> assinado (fases 1 a 3 de 5). Próximas: login com passkeys e antifraude, observabilidade com .NET Aspire e
+> publicação.
 
 ## Como o dinheiro anda
 
@@ -22,6 +23,19 @@ POST /pix  { origem: Ana, chave: "bia@exemplo.com", valor: 30,50 }    Idempotenc
        ValorCreditado Bia  +30,50 ┘ mesmo valor
        + saldo das duas contas e linhas do extrato (projeções)
        + a resposta, guardada sob a chave de idempotência
+```
+
+Quando a chave é de outro banco, o caminho é uma saga, e a soma dos saldos continua zero em cada passo:
+
+```
+POST /pix  { chave: "maria@banco-exemplo.example" }  → 202 Accepted, EndToEndId E90000000202610151430...
+  │
+  ├─ transação 1: Ana -40 → "Pix em trânsito" +40   e o Pix na caixa de saída (outbox), juntos
+  │
+  └─ trabalhador de liquidação (em segundo plano), pelo SPI do Banco Central:
+       liquidado     → "Pix em trânsito" -40 → liquidação +40     (o dinheiro saiu do Lastro)
+       recusado      → "Pix em trânsito" -40 → Ana +40            (devolução)
+       sem resposta  → consulta pelo EndToEndId e reenvia; nunca devolve sem ter certeza
 ```
 
 ## Decisões
@@ -65,6 +79,25 @@ PostgreSQL garante, mesmo com cinco contas disputando a chave ao mesmo tempo. An
 /pix/chaves/{chave}` mostra só o necessário para a pessoa reconhecer quem recebe (`Beatriz M. S.`,
 `***.456.789-**`). A chave de outra conta responde igual a uma que não existe, e assim nada vaza.
 
+**Pix para outro banco: uma saga que nunca paga duas vezes.** O débito do cliente e o Pix a enviar são gravados
+na mesma transação (padrão outbox): se o processo cair no meio, nada se perde, e o trabalhador de liquidação
+continua de onde parou. Cada Pix tem um EndToEndId no formato do Banco Central, e o SPI simulado responde
+sempre igual ao mesmo id, então reenviar não paga de novo. A regra que importa está numa função pura do
+domínio (`SagaDoPixExterno.Decidir`): "sem resposta" nunca vira devolução, porque o outro banco pode ter
+recebido. Primeiro o trabalhador consulta pelo EndToEndId, e só devolve quando é certo que o dinheiro não
+chegou. Dois trabalhadores no mesmo Pix? O registro da saga tem controle de versão, e o segundo a gravar perde
+a transação inteira, lançamento incluído.
+
+**Pix recebido de outro banco: aviso assinado.** O SPI avisa por `POST /spi/recebimentos`, com HMAC-SHA256 de
+`data.corpo` num cabeçalho. A assinatura é comparada em tempo constante, um aviso com mais de 5 minutos é
+recusado (ninguém reaproveita um aviso antigo) e o EndToEndId garante crédito único: dez cópias do mesmo aviso
+ao mesmo tempo creditam uma vez.
+
+**Conta interna não recebe pedido de fora.** A liquidação e a conta de trânsito podem ficar negativas, então
+não conferem saldo. Por isso um Pix saindo delas, ou indo direto para elas, é recusado como se a conta não
+existisse. Essa brecha existia na primeira versão: um `POST /pix` com a liquidação como origem seria dinheiro
+infinito. Hoje há um teste exatamente para isso.
+
 **Dinheiro em centavos inteiros.** `Dinheiro` é um `long` de centavos: R$ 0,10 + R$ 0,20 é exatamente R$ 0,30,
 fração de centavo é recusada na entrada e uma soma que estoura o limite falha em vez de virar negativa.
 
@@ -78,7 +111,7 @@ fração de centavo é recusada na entrada e uma soma que estoura o limite falha
 ## Testes
 
 ```bash
-dotnet test     # 93 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
+dotnet test     # 114 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
 ```
 
 - **Propriedades (FsCheck)**: centenas de sequências aleatórias de depósitos e Pix entre quatro clientes. Em
@@ -90,6 +123,12 @@ dotnet test     # 93 testes; os de integração sobem um PostgreSQL com Testcont
 - **Concorrência, no PostgreSQL de verdade**: mil Pix simultâneos com saldo para cem (passam exatamente cem e
   novecentos são recusados), 400 Pix cruzados entre duas contas (nenhum trava) e 250 depósitos em paralelo.
 - **Idempotência**: repetição, recusa lembrada, chave reaproveitada e vinte envios simultâneos.
+- **Saga do Pix para outro banco**: liquidado, recusado (o dinheiro volta e o extrato mostra as duas linhas) e
+  sem resposta duas vezes antes de liquidar (três tentativas, um pagamento só).
+- **Ataques ao aviso de Pix recebido**: assinatura errada, corpo alterado depois de assinado, aviso antigo
+  reenviado e dez cópias simultâneas.
+
+Os bancos, as pessoas e os ISPBs do Banco Central simulado são fictícios (domínios `.example`).
 
 ## Rodando
 
@@ -97,6 +136,7 @@ dotnet test     # 93 testes; os de integração sobem um PostgreSQL com Testcont
 docker run -d --name lastro-db -e POSTGRES_PASSWORD=<uma senha> -p 127.0.0.1:5432:5432 postgres:18-alpine
 export ConnectionStrings__Lastro="Host=localhost;Database=postgres;Username=postgres;Password=<a senha>"
 export ASPNETCORE_ENVIRONMENT=Development
+export Spi__Segredo="$(openssl rand -hex 32)"   # para receber Pix de outros bancos (aviso assinado)
 dotnet run --project src/Lastro.Api
 ```
 

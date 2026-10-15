@@ -25,9 +25,17 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
 
     public HttpClient Cliente() => Fabrica.CreateClient();
 
-    /// <summary>Uma API com o relógio nas mãos do teste (mesmo banco de dados).</summary>
+    /// <summary>Segredo combinado com o SPI de teste, para assinar os avisos de Pix recebido.</summary>
+    public const string SegredoDoSpi = "segredo-de-teste-do-spi-com-mais-de-32-caracteres";
+
+    /// <summary>
+    /// Uma API com o relógio nas mãos do teste (mesmo banco de dados). Sem o trabalhador de
+    /// liquidação: só o da API principal leva os Pix para outros bancos.
+    /// </summary>
     public HttpClient Cliente(TimeProvider relogio) =>
-        Fabrica.WithWebHostBuilder(b => b.ConfigureTestServices(s => s.AddSingleton(relogio))).CreateClient();
+        Fabrica.WithWebHostBuilder(b => b
+            .UseSetting("Spi:Trabalhador", "false")
+            .ConfigureTestServices(s => s.AddSingleton(relogio))).CreateClient();
 
     private WebApplicationFactory<Program> Fabrica =>
         _fabrica ?? throw new InvalidOperationException("O banco de teste ainda não subiu.");
@@ -39,7 +47,9 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
         var conexao = $"{_postgres.GetConnectionString()};Maximum Pool Size=40;Timeout=300;Command Timeout=300";
         _fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
             .UseEnvironment("Testes")
-            .UseSetting("ConnectionStrings:Lastro", conexao));
+            .UseSetting("ConnectionStrings:Lastro", conexao)
+            .UseSetting("Spi:Intervalo", "00:00:00.200")
+            .UseSetting("Spi:Segredo", SegredoDoSpi));
         _ = _fabrica.Server;
     }
 

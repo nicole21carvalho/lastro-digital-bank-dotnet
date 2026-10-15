@@ -33,6 +33,9 @@ public static class ConfiguracaoDoMarten
             opcoes.Schema.For<Titular>().UniqueIndex(t => t.Cpf);
             opcoes.Schema.For<LinhaDoExtrato>().Index(l => l.ContaId);
             opcoes.Schema.For<RegistroDeChave>().Index(c => c.ContaId);
+            // Dois trabalhadores de liquidação no mesmo Pix: o segundo a gravar falha (e não liquida duas vezes).
+            opcoes.Schema.For<PixEmLiquidacao>().UseOptimisticConcurrency(true)
+                .Index(p => p.Situacao).Index(p => p.Origem);
 
             // Números de conta sem repetição e sem buraco por corrida: uma sequência do PostgreSQL.
             opcoes.Storage.ExtendedSchemaObjects.Add(new Sequence(

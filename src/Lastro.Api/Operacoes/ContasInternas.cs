@@ -9,7 +9,10 @@ public static class ContasInternas
     /// <summary>Por onde o dinheiro entra e sai do banco (depósitos, e no futuro o Pix de outros bancos).</summary>
     public static readonly Guid Liquidacao = new("0199e6a0-0000-7000-8000-000000000001");
 
-    public static readonly IReadOnlyList<(Guid Id, string Numero)> Todas = [(Liquidacao, "0-0")];
+    /// <summary>Onde fica o dinheiro de um Pix para outro banco enquanto ele não é liquidado.</summary>
+    public static readonly Guid PixEmTransito = new("0199e6a0-0000-7000-8000-000000000002");
+
+    public static readonly IReadOnlyList<(Guid Id, string Numero)> Todas = [(Liquidacao, "0-0"), (PixEmTransito, "0-1")];
 }
 
 /// <summary>Cria as contas internas na subida, se ainda não existirem.</summary>

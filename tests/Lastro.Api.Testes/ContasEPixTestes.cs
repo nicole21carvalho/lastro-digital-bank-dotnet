@@ -82,6 +82,32 @@ public class ContasEPixTestes(BancoDeTeste banco)
     }
 
     [Fact]
+    public async Task Ninguem_tira_dinheiro_de_uma_conta_interna_do_banco()
+    {
+        // A liquidação pode ficar negativa, então não confere saldo: um Pix saindo dela seria dinheiro infinito.
+        var ana = await _http.AbrirConta();
+        var liquidacao = Lastro.Api.Operacoes.ContasInternas.Liquidacao;
+
+        var resposta = await _http.Pix(liquidacao, ana.Id, 1_000_000m);
+
+        Assert.Equal(HttpStatusCode.NotFound, resposta.StatusCode);
+        Assert.Equal(0m, await _http.Saldo(ana.Id));
+    }
+
+    [Fact]
+    public async Task Ninguem_manda_pix_direto_para_uma_conta_interna()
+    {
+        var ana = await _http.AbrirConta();
+        await _http.Depositar(ana.Id, 10m);
+        foreach (var interna in Lastro.Api.Operacoes.ContasInternas.Todas)
+        {
+            Assert.Equal(HttpStatusCode.NotFound, (await _http.Pix(ana.Id, interna.Id, 1m)).StatusCode);
+            Assert.Equal(HttpStatusCode.NotFound, (await _http.Depositar(interna.Id, 1m)).StatusCode);
+        }
+        Assert.Equal(10m, await _http.Saldo(ana.Id));
+    }
+
+    [Fact]
     public async Task Um_cpf_uma_conta()
     {
         var cpf = Api.NovoCpf();

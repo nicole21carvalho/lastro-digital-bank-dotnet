@@ -1,4 +1,5 @@
 using Lastro.Api.Armazenamento;
+using Lastro.Api.Spi;
 using Lastro.Dominio;
 using Marten;
 
@@ -12,8 +13,14 @@ public sealed record ChaveCadastrada(string Chave, TipoDeChave Tipo, DateTimeOff
 /// </summary>
 public sealed record DonoDaChave(string Chave, TipoDeChave Tipo, string Nome, string Cpf, string Instituicao);
 
-/// <summary>O diretório de chaves Pix (DICT), simulado dentro do Lastro.</summary>
-public sealed class ChavesPix(IDocumentSession sessao, TimeProvider relogio)
+/// <summary>Para onde vai um Pix: uma conta do Lastro, ou uma chave de outro banco.</summary>
+public sealed record DestinoDoPix(Guid? Conta, ChaveDeOutroBanco? OutroBanco);
+
+/// <summary>
+/// As chaves Pix do Lastro. Uma chave que não é daqui é procurada no diretório do Banco
+/// Central (simulado), como fazem os bancos de verdade.
+/// </summary>
+public sealed class ChavesPix(IDocumentSession sessao, TimeProvider relogio, IDiretorioDeChaves diretorio)
 {
     public const string Instituicao = "Lastro";
 
@@ -83,8 +90,8 @@ public sealed class ChavesPix(IDocumentSession sessao, TimeProvider relogio)
         await sessao.SaveChangesAsync(ct);
     }
 
-    /// <summary>Para qual conta vai um Pix feito com esta chave.</summary>
-    public async Task<Guid> ContaDa(string chaveDigitada, CancellationToken ct)
+    /// <summary>A conta do Lastro dona desta chave (para receber um Pix de outro banco).</summary>
+    public async Task<Guid> ContaInterna(string chaveDigitada, CancellationToken ct)
     {
         var chave = ChavePix.Interpretar(chaveDigitada);
         var registro = await sessao.LoadAsync<RegistroDeChave>(chave.Valor, ct)
@@ -92,11 +99,28 @@ public sealed class ChavesPix(IDocumentSession sessao, TimeProvider relogio)
         return registro.ContaId;
     }
 
+    /// <summary>Para onde vai um Pix feito com esta chave: aqui ou em outro banco.</summary>
+    public async Task<DestinoDoPix> Resolver(string chaveDigitada, CancellationToken ct)
+    {
+        var chave = ChavePix.Interpretar(chaveDigitada);
+        if (await sessao.LoadAsync<RegistroDeChave>(chave.Valor, ct) is { } registro)
+        {
+            return new DestinoDoPix(registro.ContaId, null);
+        }
+        return await diretorio.Consultar(chave, ct) is { } externa
+            ? new DestinoDoPix(null, externa)
+            : throw new RegraVioladaException(Erros.ChavePixNaoEncontrada, "Chave Pix não encontrada.");
+    }
+
     public async Task<DonoDaChave> Consultar(string chaveDigitada, CancellationToken ct)
     {
         var chave = ChavePix.Interpretar(chaveDigitada);
-        var contaId = await ContaDa(chaveDigitada, ct);
-        var conta = await sessao.LoadAsync<Conta>(contaId, ct);
+        var destino = await Resolver(chaveDigitada, ct);
+        if (destino.OutroBanco is { } externa)
+        {
+            return new DonoDaChave(chave.Mascarada, chave.Tipo, externa.Nome, externa.Cpf, externa.Instituicao);
+        }
+        var conta = await sessao.LoadAsync<Conta>(destino.Conta!.Value, ct);
         var titular = conta?.TitularId is { } id ? await sessao.LoadAsync<Titular>(id, ct) : null;
         if (titular is null)
         {

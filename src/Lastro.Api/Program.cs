@@ -2,6 +2,7 @@ using System.Text.Json.Serialization;
 using Lastro.Api;
 using Lastro.Api.Armazenamento;
 using Lastro.Api.Operacoes;
+using Lastro.Api.Spi;
 using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -19,6 +20,16 @@ builder.Services.AddHostedService<CriarContasInternas>();
 builder.Services.AddScoped<Cadastro>();
 builder.Services.AddScoped<Movimentacoes>();
 builder.Services.AddScoped<ChavesPix>();
+builder.Services.AddScoped<Recebimentos>();
+
+// O Banco Central de mentira (DICT e SPI). Num banco de verdade, aqui entraria o cliente da API dele.
+builder.Services.AddSingleton<BancoCentralSimulado>();
+builder.Services.AddSingleton<IDiretorioDeChaves>(s => s.GetRequiredService<BancoCentralSimulado>());
+builder.Services.AddSingleton<ISpi>(s => s.GetRequiredService<BancoCentralSimulado>());
+if (builder.Configuration.GetValue("Spi:Trabalhador", true))
+{
+    builder.Services.AddHostedService<LiquidacaoDePix>();
+}
 
 var app = builder.Build();
 

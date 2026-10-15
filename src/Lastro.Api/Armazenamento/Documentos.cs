@@ -45,4 +45,31 @@ public sealed record MovimentacaoFeita(
     Guid Origem,
     Guid Destino,
     string Descricao,
-    DateTimeOffset Em);
+    DateTimeOffset Em,
+    PixParaFora? ParaOutroBanco = null);
+
+/// <summary>Para onde vai um Pix que sai do Lastro.</summary>
+public sealed record PixParaFora(string EndToEndId, string Instituicao, string Chave, SituacaoDoPix Situacao);
+
+/// <summary>
+/// A saga de um Pix para outro banco. Nasce na mesma transação que tira o dinheiro do
+/// cliente (é a "caixa de saída", o padrão outbox): se o processo cair logo depois, o
+/// Pix não se perde, e o trabalhador de liquidação continua de onde parou.
+/// </summary>
+public sealed record PixEmLiquidacao(
+    string Id,
+    Guid LancamentoId,
+    Guid Origem,
+    string IspbDestino,
+    string Instituicao,
+    string Chave,
+    long Centavos,
+    SituacaoDoPix Situacao,
+    int Tentativas,
+    DateTimeOffset ProximaTentativa,
+    string? Motivo,
+    DateTimeOffset CriadoEm,
+    DateTimeOffset? ConcluidoEm);
+
+/// <summary>Pix vindo de outro banco, pelo EndToEndId: o mesmo aviso duas vezes credita uma vez só.</summary>
+public sealed record PixRecebidoRegistro(string Id, Guid LancamentoId, Guid Conta, DateTimeOffset Em);

@@ -11,6 +11,15 @@ public enum TipoDeLancamento
 {
     Deposito,
     Pix,
+
+    /// <summary>O Pix para outro banco foi liquidado: o dinheiro sai da conta de trânsito para a liquidação.</summary>
+    Liquidacao,
+
+    /// <summary>O outro banco recusou: o dinheiro volta da conta de trânsito para o cliente.</summary>
+    Devolucao,
+
+    /// <summary>Pix vindo de outro banco: entra pela liquidação.</summary>
+    PixRecebido,
 }
 
 // Os fatos do livro-razão. São imutáveis e guardados para sempre no event store: o saldo,
