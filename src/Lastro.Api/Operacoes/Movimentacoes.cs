@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using JasperFx.Events;
@@ -37,9 +38,47 @@ public sealed record ResultadoDaMovimentacao(MovimentacaoFeita? Feita, RegraViol
 /// </summary>
 public sealed class Movimentacoes(IDocumentSession sessao, TimeProvider relogio, PoliticaAntifraude antifraude)
 {
+    /// <summary>Um span por movimentação, com o tipo e o resultado; nada do valor nem das contas.</summary>
     public async Task<ResultadoDaMovimentacao> Executar(PedidoDeMovimentacao pedido, CancellationToken ct)
     {
         ArgumentNullException.ThrowIfNull(pedido);
+        var tipo = pedido.ParaOutroBanco is null ? pedido.Tipo.ToString() : "PixParaOutroBanco";
+        using var atividade = Telemetria.Fonte.StartActivity("movimentar");
+        atividade?.SetTag("lastro.tipo", tipo);
+        var resultado = "erro";
+        try
+        {
+            var feito = await ExecutarNaTransacao(pedido, ct);
+            resultado = feito.Recusa?.Codigo ?? "feito";
+            atividade?.SetTag("lastro.repetida", feito.Repetida);
+            if (feito is { Feita: { } movimentacao, Repetida: false })
+            {
+                Telemetria.Valores.Record((double)movimentacao.Valor, new KeyValuePair<string, object?>("lastro.tipo", tipo));
+            }
+            return feito;
+        }
+        catch (RegraVioladaException recusa)
+        {
+            resultado = recusa.Codigo;
+            throw;
+        }
+        catch (Exception erro)
+        {
+            resultado = "erro";
+            atividade?.SetStatus(ActivityStatusCode.Error, erro.GetType().Name);
+            throw;
+        }
+        finally
+        {
+            atividade?.SetTag("lastro.resultado", resultado);
+            Telemetria.Movimentacoes.Add(1,
+                new KeyValuePair<string, object?>("lastro.tipo", tipo),
+                new KeyValuePair<string, object?>("lastro.resultado", resultado));
+        }
+    }
+
+    private async Task<ResultadoDaMovimentacao> ExecutarNaTransacao(PedidoDeMovimentacao pedido, CancellationToken ct)
+    {
         var contas = new Dictionary<Guid, IEventStream<Conta>>();
         foreach (var id in new[] { pedido.Origem, pedido.Destino }.Distinct().Order())
         {

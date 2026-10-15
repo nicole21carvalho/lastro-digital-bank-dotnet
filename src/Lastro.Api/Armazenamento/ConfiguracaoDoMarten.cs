@@ -40,6 +40,10 @@ public static class ConfiguracaoDoMarten
             // Um CPF, um titular; um login, uma conta: o próprio banco garante, mesmo com dois cadastros ao mesmo tempo.
             opcoes.Schema.For<Titular>().UniqueIndex(t => t.Cpf).UniqueIndex(t => t.Usuario);
 
+            // Spans das conexões e contadores de eventos gravados (fonte "Marten" no OpenTelemetry).
+            opcoes.OpenTelemetry.TrackConnections = JasperFx.OpenTelemetry.TrackLevel.Normal;
+            opcoes.OpenTelemetry.TrackEventCounters();
+
             // Auditoria: cada evento guarda quem fez (o "sub") e o id do trace da requisição.
             opcoes.Events.MetadataConfig.UserNameEnabled = true;
             opcoes.Events.MetadataConfig.CorrelationIdEnabled = true;

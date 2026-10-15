@@ -10,6 +10,7 @@ using Scalar.AspNetCore;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddObservabilidade();
 builder.Services.AddProblemDetails();
 builder.Services.AddExceptionHandler<TratadorDeErros>();
 builder.Services.AddValidation();
@@ -74,7 +75,7 @@ if (app.Environment.IsDevelopment())
     app.MapScalarApiReference("/docs").AllowAnonymous();
 }
 app.MapEndpoints();
-app.MapGet("/saude", () => TypedResults.Ok(new { status = "ok" })).AllowAnonymous().ExcludeFromDescription();
+app.MapSaude();
 
 await app.RunAsync();
 

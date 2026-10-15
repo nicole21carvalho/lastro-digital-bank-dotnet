@@ -9,6 +9,15 @@
     <PackageVersion Include="Marten" Version="9.50.2" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <!-- Observabilidade (OpenTelemetry) -->
+    <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.AspNetCore" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Http" Version="1.19.0" />
+    <PackageVersion Include="OpenTelemetry.Instrumentation.Runtime" Version="1.19.0" />
+    <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
+    <!-- Orquestração local (.NET Aspire) -->
+    <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.1" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.18.0" />
     <!-- Testes (xUnit v3 na Microsoft.Testing.Platform, ligada no global.json) -->
     <PackageVersion Include="xunit.v3" Version="4.0.2" />

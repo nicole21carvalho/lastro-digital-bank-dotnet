@@ -96,6 +96,11 @@ public sealed partial class LiquidacaoDePix(
         try
         {
             await sessao.SaveChangesAsync(ct);
+            if (decisao != SagaDoPixExterno.Decisao.TentarDeNovo)
+            {
+                Telemetria.PixParaOutroBanco.Add(1, new KeyValuePair<string, object?>(
+                    "lastro.desfecho", decisao == SagaDoPixExterno.Decisao.Liquidar ? "liquidado" : "devolvido"));
+            }
         }
         catch (ConcurrencyException)
         {
