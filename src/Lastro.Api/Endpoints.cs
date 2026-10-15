@@ -1,8 +1,10 @@
 using System.ComponentModel.DataAnnotations;
+using System.Security.Claims;
 using System.Text.Json;
 using System.Text.RegularExpressions;
 using Lastro.Api.Armazenamento;
 using Lastro.Api.Operacoes;
+using Lastro.Api.Seguranca;
 using Lastro.Api.Spi;
 using Lastro.Dominio;
 using Marten;
@@ -43,6 +45,9 @@ public sealed record PixParaOutroBancoResposta(
     string EndToEndId, SituacaoDoPix Situacao, string Instituicao, decimal Valor, int Tentativas, string? Motivo,
     DateTimeOffset CriadoEm, DateTimeOffset? ConcluidoEm);
 
+public sealed record RegistroDeAuditoria(
+    long Versao, string Evento, DateTimeOffset Em, string? Usuario, string? Correlacao, Guid? LancamentoId);
+
 public sealed record ConferenciaResposta(
     decimal TotalDebitos, decimal TotalCreditos, int Lancamentos, decimal SomaDosSaldos, bool Fecha,
     IReadOnlyList<Guid> Desbalanceados);
@@ -55,51 +60,56 @@ public static partial class Endpoints
 
     public static void MapEndpoints(this IEndpointRouteBuilder app)
     {
-        var contas = app.MapGroup("/contas").WithTags("Contas");
-        contas.MapPost("/", async (AbrirContaPedido pedido, Cadastro cadastro, CancellationToken ct) =>
+        // Tudo exige login, a não ser o que diz o contrário (AllowAnonymous).
+        var cliente = app.MapGroup("").RequireAuthorization(Politicas.Cliente);
+        var operador = app.MapGroup("").RequireAuthorization(Politicas.Operador);
+
+        var contas = cliente.MapGroup("/contas").WithTags("Contas");
+        contas.MapPost("/", async (AbrirContaPedido pedido, Cadastro cadastro, ClaimsPrincipal usuario, CancellationToken ct) =>
         {
-            var conta = await cadastro.AbrirConta(pedido.Nome, pedido.Cpf, ct);
+            var conta = await cadastro.AbrirConta(pedido.Nome, pedido.Cpf, Usuarios.Id(usuario), ct);
             return TypedResults.Created($"/contas/{conta.Id}", conta);
         });
-        contas.MapGet("/{id:guid}", async (Guid id, IQuerySession consulta, CancellationToken ct) =>
-        {
-            var conta = await consulta.LoadAsync<Conta>(id, ct) ?? throw NaoEncontrada();
-            return TypedResults.Ok(new ContaResposta(
-                conta.Id, NumeroDaConta.Agencia, conta.Numero, conta.Tipo, conta.Saldo.Reais, Limites(conta)));
-        });
+        contas.MapGet("/minha", async (Donos donos, ClaimsPrincipal usuario, CancellationToken ct) =>
+            await donos.DoUsuario(usuario, ct) is { } conta ? Results.Ok(Resposta(conta)) : Results.NotFound());
+        contas.MapGet("/{id:guid}", async (Guid id, Donos donos, ClaimsPrincipal usuario, CancellationToken ct) =>
+            TypedResults.Ok(Resposta(await donos.Garantir(id, usuario, ct))));
         contas.MapPut("/{id:guid}/limite-noturno", async (
-            Guid id, LimitePedido pedido, Cadastro cadastro, CancellationToken ct) =>
-            TypedResults.Ok(Limites(await cadastro.AlterarLimiteNoturno(id, Dinheiro.DeReais(pedido.Valor), ct))));
-
-        var chaves = contas.MapGroup("/{id:guid}/chaves").WithTags("Chaves Pix");
-        chaves.MapPost("/", async (Guid id, ChavePedido pedido, ChavesPix dict, CancellationToken ct) =>
+            Guid id, LimitePedido pedido, Donos donos, Cadastro cadastro, ClaimsPrincipal usuario, CancellationToken ct) =>
         {
-            var chave = await dict.Cadastrar(id, pedido.Tipo, pedido.Valor, ct);
-            return TypedResults.Created($"/contas/{id}/chaves/{Uri.EscapeDataString(chave.Chave)}", chave);
-        });
-        chaves.MapGet("/", async (Guid id, ChavesPix dict, CancellationToken ct) =>
-            TypedResults.Ok(await dict.Listar(id, ct)));
-        chaves.MapDelete("/{chave}", async (Guid id, string chave, ChavesPix dict, CancellationToken ct) =>
-        {
-            await dict.Excluir(id, chave, ct);
-            return TypedResults.NoContent();
+            await donos.Garantir(id, usuario, ct);
+            return TypedResults.Ok(Limites(await cadastro.AlterarLimiteNoturno(id, Dinheiro.DeReais(pedido.Valor), ct)));
         });
         contas.MapGet("/{id:guid}/saldo", ConsultarSaldo);
         contas.MapGet("/{id:guid}/extrato", ConsultarExtrato);
-        contas.MapPost("/{id:guid}/depositos", async (
-            Guid id, DepositoPedido pedido, [FromHeader(Name = "Idempotency-Key")] string? chave,
-            Movimentacoes movimentacoes, HttpContext http, CancellationToken ct) =>
+
+        var chaves = contas.MapGroup("/{id:guid}/chaves").WithTags("Chaves Pix");
+        chaves.MapPost("/", async (
+            Guid id, ChavePedido pedido, Donos donos, ChavesPix dict, ClaimsPrincipal usuario, CancellationToken ct) =>
         {
-            var resultado = await movimentacoes.Executar(
-                new PedidoDeMovimentacao(ContasInternas.Liquidacao, id, Dinheiro.DeReais(pedido.Valor),
-                    TipoDeLancamento.Deposito, "Depósito", Chave(chave)), ct);
-            return Responder(resultado, http);
+            await donos.Garantir(id, usuario, ct);
+            var chave = await dict.Cadastrar(id, pedido.Tipo, pedido.Valor, ct);
+            return TypedResults.Created($"/contas/{id}/chaves/{Uri.EscapeDataString(chave.Chave)}", chave);
+        });
+        chaves.MapGet("/", async (Guid id, Donos donos, ChavesPix dict, ClaimsPrincipal usuario, CancellationToken ct) =>
+        {
+            await donos.Garantir(id, usuario, ct);
+            return TypedResults.Ok(await dict.Listar(id, ct));
+        });
+        chaves.MapDelete("/{chave}", async (
+            Guid id, string chave, Donos donos, ChavesPix dict, ClaimsPrincipal usuario, CancellationToken ct) =>
+        {
+            await donos.Garantir(id, usuario, ct);
+            await dict.Excluir(id, chave, ct);
+            return TypedResults.NoContent();
         });
 
-        app.MapPost("/pix", async (
-            PixPedido pedido, [FromHeader(Name = "Idempotency-Key")] string? chave,
-            Movimentacoes movimentacoes, ChavesPix dict, HttpContext http, CancellationToken ct) =>
+        cliente.MapPost("/pix", async (
+            PixPedido pedido, [FromHeader(Name = "Idempotency-Key")] string? chave, Donos donos,
+            Movimentacoes movimentacoes, ChavesPix dict, ClaimsPrincipal usuario, HttpContext http, CancellationToken ct) =>
         {
+            // Só sai dinheiro da conta de quem está logado.
+            await donos.Garantir(pedido.Origem, usuario, ct);
             var destino = (pedido.Destino, pedido.Chave) switch
             {
                 ({ } conta, null) => new DestinoDoPix(conta, null),
@@ -112,15 +122,43 @@ public static partial class Endpoints
                     Dinheiro.DeReais(pedido.Valor), TipoDeLancamento.Pix, pedido.Descricao?.Trim() ?? "",
                     Chave(chave), destino.OutroBanco), ct);
             return Responder(resultado, http);
+        }).WithTags("Pix").RequireRateLimiting(LimitesDeUso.Pix);
+
+        cliente.MapGet("/pix/{endToEndId}", async (
+            string endToEndId, IQuerySession consulta, Donos donos, ClaimsPrincipal usuario, CancellationToken ct) =>
+        {
+            var pix = await consulta.LoadAsync<PixEmLiquidacao>(endToEndId, ct);
+            if (pix is null)
+            {
+                return Results.NotFound();
+            }
+            await donos.Garantir(pix.Origem, usuario, ct);
+            return Results.Ok(new PixParaOutroBancoResposta(pix.Id, pix.Situacao, pix.Instituicao,
+                new Dinheiro(pix.Centavos).Reais, pix.Tentativas, pix.Motivo, pix.CriadoEm, pix.ConcluidoEm));
         }).WithTags("Pix");
 
-        app.MapGet("/pix/{endToEndId}", async (string endToEndId, IQuerySession consulta, CancellationToken ct) =>
-            await consulta.LoadAsync<PixEmLiquidacao>(endToEndId, ct) is { } pix
-                ? Results.Ok(new PixParaOutroBancoResposta(pix.Id, pix.Situacao, pix.Instituicao,
-                    new Dinheiro(pix.Centavos).Reais, pix.Tentativas, pix.Motivo, pix.CriadoEm, pix.ConcluidoEm))
-                : Results.NotFound()).WithTags("Pix");
+        // A tela "confira antes de enviar": quem recebe, sem expor o titular inteiro. Com limite
+        // de uso, para ninguém varrer chaves e montar uma lista de nomes.
+        cliente.MapGet("/pix/chaves/{chave}", async (string chave, ChavesPix dict, CancellationToken ct) =>
+            TypedResults.Ok(await dict.Consultar(chave, ct)))
+            .WithTags("Pix").RequireRateLimiting(LimitesDeUso.ConsultaDeChave);
 
-        // O SPI avisa que chegou um Pix de outro banco. Sem assinatura válida, nem lê o corpo.
+        // Funções do banco, não do cliente.
+        operador.MapPost("/contas/{id:guid}/depositos", async (
+            Guid id, DepositoPedido pedido, [FromHeader(Name = "Idempotency-Key")] string? chave,
+            Movimentacoes movimentacoes, HttpContext http, CancellationToken ct) =>
+        {
+            var resultado = await movimentacoes.Executar(
+                new PedidoDeMovimentacao(ContasInternas.Liquidacao, id, Dinheiro.DeReais(pedido.Valor),
+                    TipoDeLancamento.Deposito, "Depósito", Chave(chave)), ct);
+            return Responder(resultado, http);
+        }).WithTags("Operação");
+        operador.MapGet("/lancamentos/{id:guid}", ConsultarLancamento).WithTags("Operação");
+        operador.MapGet("/livro-razao/conferencia", Conferir).WithTags("Operação");
+        operador.MapGet("/contas/{id:guid}/auditoria", Auditar).WithTags("Operação");
+
+        // O SPI avisa que chegou um Pix de outro banco. Não tem login: quem prova a origem é a
+        // assinatura. Sem assinatura válida, o corpo nem é lido como aviso.
         app.MapPost("/spi/recebimentos", async (
             HttpRequest requisicao, Recebimentos recebimentos, IConfiguration configuracao, TimeProvider relogio,
             CancellationToken ct) =>
@@ -139,15 +177,11 @@ public static partial class Endpoints
             var aviso = JsonSerializer.Deserialize<AvisoDePix>(corpo, JsonSerializerOptions.Web)
                 ?? throw new RegraVioladaException(Erros.ValorInvalido, "Aviso vazio.");
             return Results.Ok(await recebimentos.Receber(aviso, ct));
-        }).WithTags("SPI").ExcludeFromDescription();
-
-        // A tela "confira antes de enviar": quem recebe, sem expor o titular inteiro.
-        app.MapGet("/pix/chaves/{chave}", async (string chave, ChavesPix dict, CancellationToken ct) =>
-            TypedResults.Ok(await dict.Consultar(chave, ct))).WithTags("Pix");
-
-        app.MapGet("/lancamentos/{id:guid}", ConsultarLancamento).WithTags("Livro-razão");
-        app.MapGet("/livro-razao/conferencia", Conferir).WithTags("Livro-razão");
+        }).AllowAnonymous().WithTags("SPI").ExcludeFromDescription();
     }
+
+    private static ContaResposta Resposta(Conta conta) =>
+        new(conta.Id, NumeroDaConta.Agencia, conta.Numero, conta.Tipo, conta.Saldo.Reais, Limites(conta));
 
     private static string Chave(string? chave) =>
         chave is not null && FormatoDaChave().IsMatch(chave)
@@ -155,9 +189,6 @@ public static partial class Endpoints
             : throw new RegraVioladaException(
                 Erros.ChaveDeIdempotenciaInvalida,
                 "Envie o cabeçalho Idempotency-Key, de 8 a 64 letras, números, '-' ou '_'.");
-
-    private static RegraVioladaException NaoEncontrada() =>
-        new(Erros.ContaNaoEncontrada, "Conta não encontrada.");
 
     private static LimiteResposta Limites(Conta conta) => new(
         conta.LimiteNoturno.Reais,
@@ -186,25 +217,24 @@ public static partial class Endpoints
 
     /// <summary>Saldo agora, ou em qualquer instante do passado: o event store guarda tudo.</summary>
     private static async Task<IResult> ConsultarSaldo(
-        Guid id, DateTimeOffset? em, IQuerySession consulta, CancellationToken ct)
+        Guid id, DateTimeOffset? em, IQuerySession consulta, Donos donos, ClaimsPrincipal usuario, CancellationToken ct)
     {
-        var conta = em is null
-            ? await consulta.LoadAsync<Conta>(id, ct)
-            : await consulta.Events.AggregateStreamAsync<Conta>(id, timestamp: em, token: ct);
-        conta ??= em is null ? throw NaoEncontrada() : null;
+        var atual = await donos.Garantir(id, usuario, ct);
+        var conta = em is null ? atual : await consulta.Events.AggregateStreamAsync<Conta>(id, timestamp: em, token: ct);
         // Antes da abertura da conta, o saldo era zero.
         return TypedResults.Ok(new SaldoResposta(id, conta?.Saldo.Reais ?? 0m, em));
     }
 
     private static async Task<IResult> ConsultarExtrato(
-        Guid id, IQuerySession consulta, CancellationToken ct, int pagina = 1, int tamanho = 20)
+        Guid id, IQuerySession consulta, Donos donos, ClaimsPrincipal usuario, CancellationToken ct,
+        int pagina = 1, int tamanho = 20)
     {
         if (pagina < 1 || tamanho is < 1 or > 100)
         {
             return TypedResults.Problem(
                 type: Erros.ValorInvalido, title: "Página a partir de 1, com 1 a 100 linhas.", statusCode: 400);
         }
-        _ = await consulta.LoadAsync<Conta>(id, ct) ?? throw NaoEncontrada();
+        await donos.Garantir(id, usuario, ct);
         var linhas = consulta.Query<LinhaDoExtrato>().Where(l => l.ContaId == id);
         var total = await linhas.CountAsync(ct);
         var itens = await linhas.OrderByDescending(l => l.Sequencia)
@@ -236,5 +266,19 @@ public static partial class Endpoints
         return TypedResults.Ok(new ConferenciaResposta(
             conferencia.TotalDebitos.Reais, conferencia.TotalCreditos.Reais, conferencia.Lancamentos, soma.Reais,
             conferencia.Fecha && soma == Dinheiro.Zero, conferencia.Desbalanceados));
+    }
+
+    /// <summary>Quem fez o quê, e quando: os metadados que o Marten guarda em cada evento.</summary>
+    private static async Task<IResult> Auditar(Guid id, IQuerySession consulta, CancellationToken ct)
+    {
+        var eventos = await consulta.Events.FetchStreamAsync(id, token: ct);
+        if (eventos.Count == 0)
+        {
+            return TypedResults.NotFound();
+        }
+        return TypedResults.Ok(eventos.Select(e => new RegistroDeAuditoria(
+            e.Version, e.EventTypeName, e.Timestamp, e.UserName, e.CorrelationId,
+            e.Data switch { ValorDebitado d => d.LancamentoId, ValorCreditado c => c.LancamentoId, _ => (Guid?)null }))
+            .ToList());
     }
 }

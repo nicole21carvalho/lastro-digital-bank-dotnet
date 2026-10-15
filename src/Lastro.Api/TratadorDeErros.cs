@@ -16,7 +16,7 @@ public sealed class TratadorDeErros(IProblemDetailsService problemas) : IExcepti
         Erros.ContaNaoEncontrada or Erros.ChavePixNaoEncontrada => StatusCodes.Status404NotFound,
         Erros.ChaveDeIdempotenciaInvalida => StatusCodes.Status400BadRequest,
         Erros.CpfJaCadastrado or Erros.ChaveDeIdempotenciaReutilizada or Erros.ContaOcupada
-            or Erros.ChavePixJaCadastrada => StatusCodes.Status409Conflict,
+            or Erros.ChavePixJaCadastrada or Erros.ContaJaAberta => StatusCodes.Status409Conflict,
         _ => StatusCodes.Status422UnprocessableEntity,
     };
 

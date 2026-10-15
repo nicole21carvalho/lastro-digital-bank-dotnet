@@ -1,3 +1,4 @@
+using JasperFx;
 using JasperFx.Events;
 using JasperFx.Events.Projections;
 using Lastro.Dominio;
@@ -12,12 +13,19 @@ public static class ConfiguracaoDoMarten
 
     public const string SequenciaDasContas = $"{Esquema}.numero_da_conta";
 
-    public static IServiceCollection AddArmazenamento(this IServiceCollection services, string conexao)
+    // aplicarEsquema: cria ou atualiza tabelas e funções na subida. Com várias réplicas, deixe só
+    // uma (ou um passo de migração) fazer isso: mudar o esquema com transações rodando dá erro nelas.
+    public static IServiceCollection AddArmazenamento(this IServiceCollection services, string conexao, bool aplicarEsquema = true)
     {
-        services.AddMarten(opcoes =>
+        var marten = services.AddMarten(opcoes =>
         {
             opcoes.Connection(conexao);
             opcoes.DatabaseSchemaName = Esquema;
+            if (!aplicarEsquema)
+            {
+                // Nem na primeira consulta: esta réplica usa o esquema que já existe, e nunca roda DDL.
+                opcoes.AutoCreateSchemaObjects = AutoCreate.None;
+            }
             opcoes.Events.AddEventTypes(
                 [typeof(ContaAberta), typeof(ValorCreditado), typeof(ValorDebitado), typeof(LimiteNoturnoAlterado)]);
             // No modo "rich", o número de sequência de cada evento é reservado antes de as
@@ -29,10 +37,19 @@ public static class ConfiguracaoDoMarten
             opcoes.Projections.Add<ContaProjection>(ProjectionLifecycle.Inline);
             opcoes.Projections.Add<ExtratoProjection>(ProjectionLifecycle.Inline);
 
-            // Um CPF, um titular: o próprio banco garante, mesmo com dois cadastros ao mesmo tempo.
-            opcoes.Schema.For<Titular>().UniqueIndex(t => t.Cpf);
+            // Um CPF, um titular; um login, uma conta: o próprio banco garante, mesmo com dois cadastros ao mesmo tempo.
+            opcoes.Schema.For<Titular>().UniqueIndex(t => t.Cpf).UniqueIndex(t => t.Usuario);
+
+            // Auditoria: cada evento guarda quem fez (o "sub") e o id do trace da requisição.
+            opcoes.Events.MetadataConfig.UserNameEnabled = true;
+            opcoes.Events.MetadataConfig.CorrelationIdEnabled = true;
             opcoes.Schema.For<LinhaDoExtrato>().Index(l => l.ContaId);
             opcoes.Schema.For<RegistroDeChave>().Index(c => c.ContaId);
+            // Todo documento registrado aqui: assim o passo de esquema cria todas as tabelas, e uma
+            // réplica que não roda DDL nunca encontra uma faltando (sem registro, o Marten só criaria
+            // a tabela no primeiro uso, e um teste pegou isso).
+            opcoes.Schema.For<RegistroDeIdempotencia>();
+            opcoes.Schema.For<PixRecebidoRegistro>();
             // Dois trabalhadores de liquidação no mesmo Pix: o segundo a gravar falha (e não liquida duas vezes).
             opcoes.Schema.For<PixEmLiquidacao>().UseOptimisticConcurrency(true)
                 .Index(p => p.Situacao).Index(p => p.Origem);
@@ -40,7 +57,11 @@ public static class ConfiguracaoDoMarten
             // Números de conta sem repetição e sem buraco por corrida: uma sequência do PostgreSQL.
             opcoes.Storage.ExtendedSchemaObjects.Add(new Sequence(
                 new PostgresqlObjectName(Esquema, "numero_da_conta", SchemaUtils.IdentifierUsage.General), 100_001));
-        }).ApplyAllDatabaseChangesOnStartup();
+        }).BuildSessionsWith<Seguranca.SessaoComAutoria>();
+        if (aplicarEsquema)
+        {
+            marten.ApplyAllDatabaseChangesOnStartup();
+        }
         return services;
     }
 }

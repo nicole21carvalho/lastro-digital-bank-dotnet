@@ -1,5 +1,6 @@
 using Lastro.Dominio;
 using Marten;
+using Marten.Exceptions;
 
 namespace Lastro.Api.Operacoes;
 
@@ -20,16 +21,24 @@ public sealed class CriarContasInternas(IDocumentStore loja, TimeProvider relogi
 {
     public async Task StartAsync(CancellationToken cancellationToken)
     {
-        await using var sessao = loja.LightweightSession();
         foreach (var (id, numero) in ContasInternas.Todas)
         {
-            if (await sessao.Events.FetchStreamStateAsync(id, cancellationToken) is null)
+            await using var sessao = loja.LightweightSession();
+            sessao.LastModifiedBy = "sistema:inicio";
+            if (await sessao.Events.FetchStreamStateAsync(id, cancellationToken) is not null)
             {
-                sessao.Events.StartStream<Conta>(
-                    id, new ContaAberta(id, numero, TipoDeConta.Interna, null, relogio.GetUtcNow()));
+                continue;
+            }
+            sessao.Events.StartStream<Conta>(id, new ContaAberta(id, numero, TipoDeConta.Interna, null, relogio.GetUtcNow()));
+            try
+            {
+                await sessao.SaveChangesAsync(cancellationToken);
+            }
+            catch (ExistingStreamIdCollisionException)
+            {
+                // Outra réplica subindo ao mesmo tempo criou primeiro: é o que se queria.
             }
         }
-        await sessao.SaveChangesAsync(cancellationToken);
     }
 
     public Task StopAsync(CancellationToken cancellationToken) => Task.CompletedTask;

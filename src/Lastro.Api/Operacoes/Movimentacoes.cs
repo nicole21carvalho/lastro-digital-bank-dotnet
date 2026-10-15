@@ -35,7 +35,7 @@ public sealed record ResultadoDaMovimentacao(MovimentacaoFeita? Feita, RegraViol
 ///    ao mesmo tempo não passam juntas);
 /// 3. decide pelas regras do domínio e grava débito, crédito e a resposta juntos.
 /// </summary>
-public sealed class Movimentacoes(IDocumentSession sessao, TimeProvider relogio)
+public sealed class Movimentacoes(IDocumentSession sessao, TimeProvider relogio, PoliticaAntifraude antifraude)
 {
     public async Task<ResultadoDaMovimentacao> Executar(PedidoDeMovimentacao pedido, CancellationToken ct)
     {
@@ -81,6 +81,10 @@ public sealed class Movimentacoes(IDocumentSession sessao, TimeProvider relogio)
         {
             lancamento = Lancamento.Transferir(
                 origem, destino, pedido.Valor, pedido.Tipo, pedido.Descricao, Guid.CreateVersion7(), agora);
+            if (pedido.Tipo == TipoDeLancamento.Pix)
+            {
+                Antifraude.Avaliar(origem, pedido.Valor, agora, antifraude);
+            }
         }
         catch (RegraVioladaException recusa)
         {

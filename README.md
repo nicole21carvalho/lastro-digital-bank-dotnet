@@ -5,9 +5,9 @@ Pix com chave de idempotência e event sourcing sobre o PostgreSQL. Mil Pix simu
 com saldo para cem: passam exatamente cem.
 
 > Em construção. Pronto até agora: livro-razão, contas, depósito, Pix entre contas do Lastro, idempotência,
-> testes de concorrência, chaves Pix, limite noturno e Pix para outros bancos, com devolução e recebimento
-> assinado (fases 1 a 3 de 5). Próximas: login com passkeys e antifraude, observabilidade com .NET Aspire e
-> publicação.
+> testes de concorrência, chaves Pix, limite noturno, Pix para outros bancos (com devolução e recebimento
+> assinado), login, dono da conta, limites de uso, antifraude e auditoria (fases 1 a 4 de 5). Próxima:
+> observabilidade com .NET Aspire, Keycloak com passkeys no ambiente completo, CI e publicação.
 
 ## Como o dinheiro anda
 
@@ -98,6 +98,37 @@ não conferem saldo. Por isso um Pix saindo delas, ou indo direto para elas, é 
 existisse. Essa brecha existia na primeira versão: um `POST /pix` com a liquidação como origem seria dinheiro
 infinito. Hoje há um teste exatamente para isso.
 
+## Segurança
+
+**Login por token (OAuth 2.0), e a conta é de quem fez login.** A API é um *resource server*: confere a
+assinatura (só RS256), o emissor, a audiência (`lastro-api`) e a validade de cada token. O `sub` do token é o
+dono da conta. Um login abre uma conta só, e um CPF também, e os dois índices únicos do PostgreSQL garantem
+isso mesmo com dois cadastros ao mesmo tempo. Mexer na conta de outra pessoa (Pix, saldo, extrato, chaves,
+limite) responde `404`, igual a uma conta que não existe. `403` contaria que ela existe.
+
+**Papéis.** Cliente faz Pix e cuida da própria conta. O depósito em caixa, a conferência do livro-razão e a
+auditoria são do papel `operador`. O aviso do SPI não tem login: quem prova a origem é a assinatura HMAC.
+
+**Limites de uso por pessoa.** O Pix e a consulta de chave têm limite por minuto, contado pelo `sub` do
+token. Varrer chaves Pix para montar uma lista de nomes é um ataque conhecido ao diretório do Pix, e um robô
+com um token roubado não esvazia a conta em segundos. Passou do limite: `429` com `Retry-After`.
+
+**Antifraude como política.** Nas primeiras 24 horas de uma conta, os Pix somam no máximo R$ 500,00
+(contas "laranja" são abertas para receber e repassar golpes), e mais de 10 Pix em 10 minutos são barrados
+(o padrão de quem esvazia uma conta invadida). As regras são funções puras do domínio. Os valores são
+uma política configurável por ambiente.
+
+**Trilha de auditoria sem dado pessoal.** Cada evento guarda nos metadados do Marten quem agiu (o `sub`, o
+operador ou o trabalhador de liquidação) e o id do trace da requisição. `GET /contas/{id}/auditoria`, só para
+operador, mostra o histórico inteiro com autoria.
+
+**Esquema do banco em um passo só.** Com várias réplicas, só uma (ou um job de migração) cria e altera
+tabelas (`Armazenamento:AplicarEsquemaNaSubida`). As outras sobem sem rodar DDL nenhum, porque mudar o esquema
+com transações rodando derruba essas transações. Os testes pegaram as duas formas desse erro: uma réplica
+mudando funções do Marten enquanto a outra gravava, e uma tabela que o Marten só criaria no primeiro uso.
+
+## Mais decisões
+
 **Dinheiro em centavos inteiros.** `Dinheiro` é um `long` de centavos: R$ 0,10 + R$ 0,20 é exatamente R$ 0,30,
 fração de centavo é recusada na entrada e uma soma que estoura o limite falha em vez de virar negativa.
 
@@ -111,7 +142,7 @@ fração de centavo é recusada na entrada e uma soma que estoura o limite falha
 ## Testes
 
 ```bash
-dotnet test     # 114 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
+dotnet test     # 130 testes; os de integração sobem um PostgreSQL com Testcontainers (precisa do Docker)
 ```
 
 - **Propriedades (FsCheck)**: centenas de sequências aleatórias de depósitos e Pix entre quatro clientes. Em
@@ -127,6 +158,10 @@ dotnet test     # 114 testes; os de integração sobem um PostgreSQL com Testcon
   sem resposta duas vezes antes de liquidar (três tentativas, um pagamento só).
 - **Ataques ao aviso de Pix recebido**: assinatura errada, corpo alterado depois de assinado, aviso antigo
   reenviado e dez cópias simultâneas.
+- **Segurança**: sem token, token de outro emissor, de outra audiência, vencido ou com a assinatura
+  adulterada; uma pessoa tentando tudo na conta de outra; cliente tentando o que é do operador; Pix saindo da
+  conta interna do banco; limites de uso; antifraude; e a autoria de cada evento na auditoria. Os tokens dos
+  testes são assinados na hora, com uma chave RSA criada para a rodada.
 
 Os bancos, as pessoas e os ISPBs do Banco Central simulado são fictícios (domínios `.example`).
 
@@ -137,6 +172,8 @@ docker run -d --name lastro-db -e POSTGRES_PASSWORD=<uma senha> -p 127.0.0.1:543
 export ConnectionStrings__Lastro="Host=localhost;Database=postgres;Username=postgres;Password=<a senha>"
 export ASPNETCORE_ENVIRONMENT=Development
 export Spi__Segredo="$(openssl rand -hex 32)"   # para receber Pix de outros bancos (aviso assinado)
+export Autenticacao__Emissor="http://localhost:8180/realms/lastro"   # o provedor de identidade (OIDC)
+export Autenticacao__ExigirHttps=false                                # só em desenvolvimento
 dotnet run --project src/Lastro.Api
 ```
 

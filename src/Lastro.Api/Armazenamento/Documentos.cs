@@ -5,8 +5,9 @@ namespace Lastro.Api.Armazenamento;
 /// <summary>
 /// Dados pessoais do titular. Ficam num documento, e não nos eventos: o event store é
 /// imutável, e a LGPD exige poder anonimizar. Os eventos só guardam o id do titular.
+/// <c>Usuario</c> é o "sub" do token de quem abriu a conta: é ele quem pode mexer nela.
 /// </summary>
-public sealed record Titular(Guid Id, string Nome, string Cpf);
+public sealed record Titular(Guid Id, string Nome, string Cpf, string Usuario);
 
 /// <summary>
 /// Uma chave do diretório de chaves Pix (o DICT, simulado). O id é a própria chave, já

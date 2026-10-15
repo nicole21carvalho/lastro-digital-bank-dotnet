@@ -26,4 +26,7 @@ public static class Erros
     public const string ChavePixNaoEncontrada = "chave-pix-nao-encontrada";
     public const string LimiteDeChaves = "limite-de-chaves";
     public const string ChaveDeOutroTitular = "chave-de-outro-titular";
+    public const string LimiteDaContaNova = "limite-da-conta-nova";
+    public const string PixEmRajada = "pix-em-rajada";
+    public const string ContaJaAberta = "conta-ja-aberta";
 }

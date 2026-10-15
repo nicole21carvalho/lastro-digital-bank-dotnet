@@ -16,10 +16,18 @@ public sealed record Conta(Guid Id, string Numero, TipoDeConta Tipo, Guid? Titul
 
     public UsoNoturno? Noite { get; init; }
 
+    public DateTimeOffset AbertaEm { get; init; }
+
+    /// <summary>Quanto saiu em Pix nas primeiras 24 horas da conta (para o antifraude).</summary>
+    public Dinheiro EnviadoNoPrimeiroDia { get; init; }
+
+    /// <summary>Os Pix da janela de tempo atual (para o antifraude achar rajadas).</summary>
+    public JanelaDePix? Rajada { get; init; }
+
     public static Conta Criar(ContaAberta aberta)
     {
         ArgumentNullException.ThrowIfNull(aberta);
-        return new(aberta.ContaId, aberta.Numero, aberta.Tipo, aberta.TitularId, Dinheiro.Zero);
+        return new(aberta.ContaId, aberta.Numero, aberta.Tipo, aberta.TitularId, Dinheiro.Zero) { AbertaEm = aberta.Em };
     }
 
     public Conta Aplicar(ValorCreditado credito)
@@ -32,7 +40,18 @@ public sealed record Conta(Guid Id, string Numero, TipoDeConta Tipo, Guid? Titul
     {
         ArgumentNullException.ThrowIfNull(debito);
         var conta = this with { Saldo = Saldo - debito.Valor };
-        if (debito.Tipo != TipoDeLancamento.Pix || Tipo != TipoDeConta.Cliente || !PeriodoNoturno.Contem(debito.Em))
+        if (debito.Tipo != TipoDeLancamento.Pix || Tipo != TipoDeConta.Cliente)
+        {
+            return conta;
+        }
+        conta = conta with
+        {
+            Rajada = Antifraude.Somar(Rajada, debito.Em),
+            EnviadoNoPrimeiroDia = debito.Em - AbertaEm < Antifraude.PeriodoDaContaNova
+                ? EnviadoNoPrimeiroDia + debito.Valor
+                : EnviadoNoPrimeiroDia,
+        };
+        if (!PeriodoNoturno.Contem(debito.Em))
         {
             return conta;
         }

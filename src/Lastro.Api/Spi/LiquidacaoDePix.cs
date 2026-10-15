@@ -61,6 +61,8 @@ public sealed partial class LiquidacaoDePix(
         var decisao = SagaDoPixExterno.Decidir(resposta, tentativa);
 
         await using var sessao = loja.LightweightSession();
+        sessao.LastModifiedBy = "sistema:liquidacao"; // na auditoria, quem mexeu foi o trabalhador
+        sessao.CorrelationId = pix.Id;
         var atual = await sessao.LoadAsync<PixEmLiquidacao>(pix.Id, ct);
         if (atual is not { Situacao: SituacaoDoPix.EmLiquidacao })
         {
