@@ -1,0 +1,10 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Lastro.Api/Lastro.Api.csproj" />
+    <Project Path="src/Lastro.Dominio/Lastro.Dominio.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Lastro.Api.Testes/Lastro.Api.Testes.csproj" />
+    <Project Path="tests/Lastro.Dominio.Testes/Lastro.Dominio.Testes.csproj" />
+  </Folder>
+</Solution>

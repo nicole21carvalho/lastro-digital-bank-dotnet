@@ -1,0 +1,6 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <!-- O domínio não depende de nada: nem de banco de dados, nem de framework web. -->
+  <PropertyGroup>
+    <RootNamespace>Lastro.Dominio</RootNamespace>
+  </PropertyGroup>
+</Project>

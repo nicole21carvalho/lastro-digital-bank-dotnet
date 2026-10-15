@@ -1,0 +1,26 @@
+<Project>
+  <!-- Vale para todos os projetos da solução. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <!-- Aviso é erro: nada de "depois eu arrumo". -->
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <AnalysisLevel>latest-recommended</AnalysisLevel>
+    <EnforceCodeStyleInBuild>true</EnforceCodeStyleInBuild>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+    <!-- Comentário XML é para quem lê o código; não exige em todo membro público. -->
+    <NoWarn>$(NoWarn);CS1591</NoWarn>
+    <!-- Sem dependência de cultura nem de ICU: dinheiro e datas são formatados no código. -->
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <!-- Versões exatas de todos os pacotes (inclusive os indiretos) em packages.lock.json. -->
+    <RestorePackagesWithLockFile>true</RestorePackagesWithLockFile>
+    <Authors>nicole21carvalho</Authors>
+  </PropertyGroup>
+
+  <PropertyGroup Condition="'$(CI)' == 'true'">
+    <ContinuousIntegrationBuild>true</ContinuousIntegrationBuild>
+    <RestoreLockedMode>true</RestoreLockedMode>
+  </PropertyGroup>
+</Project>
