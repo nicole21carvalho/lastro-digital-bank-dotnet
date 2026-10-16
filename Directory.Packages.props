@@ -18,6 +18,8 @@
     <PackageVersion Include="Npgsql.OpenTelemetry" Version="10.0.3" />
     <!-- Orquestração local (.NET Aspire) -->
     <PackageVersion Include="Aspire.Hosting.PostgreSQL" Version="13.6.1" />
+    <!-- Dependência indireta do Aspire, fixada na versão corrigida (GHSA-qhrr-8q5h-9q3h, apontada pelo osv-scanner). -->
+    <PackageVersion Include="MessagePack" Version="2.5.307" />
     <PackageVersion Include="Scalar.AspNetCore" Version="2.18.0" />
     <!-- Testes (xUnit v3 na Microsoft.Testing.Platform, ligada no global.json) -->
     <PackageVersion Include="xunit.v3" Version="4.0.2" />

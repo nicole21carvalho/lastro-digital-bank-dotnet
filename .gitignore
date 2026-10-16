@@ -9,3 +9,6 @@ TestResults/
 .env.*
 !.env.example
 appsettings.*.local.json
+
+# O lockfile do AppHost depende do sistema operacional; o CI gera o dele na hora.
+src/Lastro.AppHost/packages.lock.json

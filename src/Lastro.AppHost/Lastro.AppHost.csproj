@@ -5,6 +5,11 @@
     <!-- Sem o pacote do Aspire CLI: ele tenta instalar um certificado HTTPS de desenvolvimento
          entre os confiáveis do Windows, e o Lastro local roda em HTTP, sem precisar disso. -->
     <AspireUseCliBundle>false</AspireUseCliBundle>
+    <!-- O SDK do Aspire traz pacotes do sistema operacional (win-x64 aqui, linux-x64 no CI): um
+         lockfile gerado numa máquina nunca bate na outra. O AppHost só orquestra o ambiente local e
+         não entra na imagem; no CI, o lockfile dele é gerado na hora para o osv-scanner. -->
+    <RestorePackagesWithLockFile>false</RestorePackagesWithLockFile>
+    <RestoreLockedMode>false</RestoreLockedMode>
     <!-- As senhas geradas na primeira execução ficam nos user-secrets desta máquina, fora do repositório. -->
     <UserSecretsId>lastro-apphost</UserSecretsId>
   </PropertyGroup>
