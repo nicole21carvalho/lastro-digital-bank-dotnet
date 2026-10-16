@@ -35,9 +35,11 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
         Converters = { new JsonStringEnumConverter() },
     };
 
-    private static readonly RsaSecurityKey Chave = new(RSA.Create(2048)) { KeyId = "chave-de-teste" };
+    private static readonly RsaSecurityKey Chave = CriarChave();
 
     private readonly PostgreSqlContainer _postgres = new PostgreSqlBuilder("postgres:18-alpine").Build();
+
+    private WebApplicationFactory<Program>? _base;
 
     private WebApplicationFactory<Program>? _fabrica;
 
@@ -86,6 +88,12 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
         });
     }
 
+    private static RsaSecurityKey CriarChave()
+    {
+        using var rsa = RSA.Create(2048);
+        return new RsaSecurityKey(rsa.ExportParameters(includePrivateParameters: true)) { KeyId = "chave-de-teste" };
+    }
+
     private WebApplicationFactory<Program> Fabrica =>
         _fabrica ?? throw new InvalidOperationException("O banco de teste ainda não subiu.");
 
@@ -94,7 +102,8 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
         await _postgres.StartAsync();
         // Fila grande e paciência: os testes de concorrência disparam mil requisições de uma vez.
         var conexao = $"{_postgres.GetConnectionString()};Maximum Pool Size=40;Timeout=300;Command Timeout=300";
-        _fabrica = new WebApplicationFactory<Program>().WithWebHostBuilder(b => b
+        _base = new WebApplicationFactory<Program>();
+        _fabrica = _base.WithWebHostBuilder(b => b
             .UseEnvironment("Testes")
             .UseSetting("ConnectionStrings:Lastro", conexao)
             .UseSetting("Spi:Intervalo", "00:00:00.200")
@@ -116,9 +125,10 @@ public sealed class BancoDeTeste : IAsyncDisposable, IAsyncLifetime
 
     public async ValueTask DisposeAsync()
     {
-        if (_fabrica is not null)
+        // A fábrica base descarta também as derivadas (a principal e as variantes).
+        if (_base is not null)
         {
-            await _fabrica.DisposeAsync();
+            await _base.DisposeAsync();
         }
         await _postgres.DisposeAsync();
     }
@@ -194,13 +204,15 @@ public static class Api
     /// <summary>Um CPF válido diferente a cada chamada (dígitos calculados).</summary>
     public static string NovoCpf()
     {
-        var numeros = Random.Shared.Next(100_000_000, 999_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture);
-        foreach (var posicao in new[] { 9, 10 })
+        var base9 = Random.Shared.Next(100_000_000, 999_999_999).ToString(System.Globalization.CultureInfo.InvariantCulture);
+        var primeiro = Digito(base9);
+        return $"{base9}{primeiro}{Digito($"{base9}{primeiro}")}";
+
+        static int Digito(string numeros)
         {
-            var soma = numeros.Select((c, i) => (c - '0') * (posicao + 1 - i)).Sum();
-            numeros += (soma % 11 < 2 ? 0 : 11 - (soma % 11)).ToString(System.Globalization.CultureInfo.InvariantCulture);
+            var soma = numeros.Select((c, i) => (c - '0') * (numeros.Length + 1 - i)).Sum();
+            return soma % 11 < 2 ? 0 : 11 - (soma % 11);
         }
-        return numeros;
     }
 
     public static Task<HttpResponseMessage> Depositar(this HttpClient http, Guid conta, decimal valor, string? chave = null) =>

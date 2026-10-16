@@ -145,16 +145,16 @@ public class RecebimentoDePixTestes(BancoDeTeste banco)
             new Pagador("Maria Clara Lima", "Banco Exemplo")),
         JsonSerializerOptions.Web);
 
-    private Task<HttpResponseMessage> Avisar(string corpo, DateTimeOffset? em = null, string? assinatura = null)
+    private async Task<HttpResponseMessage> Avisar(string corpo, DateTimeOffset? em = null, string? assinatura = null)
     {
         var data = (em ?? DateTimeOffset.UtcNow).ToUnixTimeSeconds().ToString(System.Globalization.CultureInfo.InvariantCulture);
-        var pedido = new HttpRequestMessage(HttpMethod.Post, "/spi/recebimentos")
+        using var pedido = new HttpRequestMessage(HttpMethod.Post, "/spi/recebimentos")
         {
             Content = new StringContent(corpo, Encoding.UTF8, "application/json"),
         };
         pedido.Headers.Add(AssinaturaDoSpi.CabecalhoDaData, data);
         pedido.Headers.Add(AssinaturaDoSpi.Cabecalho, assinatura ?? AssinaturaDoSpi.Calcular(BancoDeTeste.SegredoDoSpi, data, corpo));
-        return _spi.SendAsync(pedido, Ct);
+        return await _spi.SendAsync(pedido, Ct);
     }
 
     [Fact]

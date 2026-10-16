@@ -110,6 +110,7 @@ public class LimiteNoturnoTestes
     {
         var (ana, bia) = Contas();
         var saiu = Dinheiro.Zero;
+        var recusados = 0;
         foreach (var (valor, minuto) in centavos.Zip(minutos))
         {
             var em = Noite.AddMinutes(minuto.Get % 500); // de 21h até antes das 6h
@@ -121,9 +122,10 @@ public class LimiteNoturnoTestes
             }
             catch (RegraVioladaException erro) when (erro.Codigo == Erros.LimiteNoturnoExcedido)
             {
+                recusados++; // recusa esperada: passaria do limite da noite
             }
         }
-        Assert.True(saiu <= PeriodoNoturno.LimitePadrao, $"saiu {saiu}");
+        Assert.True(saiu <= PeriodoNoturno.LimitePadrao, $"saiu {saiu} (recusados: {recusados})");
     }
 }
 

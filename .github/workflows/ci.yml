@@ -53,13 +53,13 @@ jobs:
         with:
           global-json-file: global.json
 
+      # Analisa o codigo-fonte direto (sem compilar): o codigo que os geradores do compilador
+      # escrevem em obj/ (Regex, OpenAPI) nao e nosso e so geraria alerta que ninguem vai corrigir.
       - uses: github/codeql-action/init@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
         with:
           languages: csharp
-          build-mode: manual
+          build-mode: none
           queries: security-and-quality
-
-      - run: dotnet build -c Release
 
       - uses: github/codeql-action/analyze@6f2ac81f5cd81fe351a197ba0b00d91d03cd2aee # v4.39.0
 

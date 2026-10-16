@@ -278,7 +278,7 @@ public static partial class Endpoints
         }
         return TypedResults.Ok(eventos.Select(e => new RegistroDeAuditoria(
             e.Version, e.EventTypeName, e.Timestamp, e.UserName, e.CorrelationId,
-            e.Data switch { ValorDebitado d => d.LancamentoId, ValorCreditado c => c.LancamentoId, _ => (Guid?)null }))
+            e.Data switch { ValorDebitado d => d.LancamentoId, ValorCreditado c => c.LancamentoId, _ => null }))
             .ToList());
     }
 }

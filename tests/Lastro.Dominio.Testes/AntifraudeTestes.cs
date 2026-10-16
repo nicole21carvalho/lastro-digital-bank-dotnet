@@ -42,7 +42,7 @@ public class AntifraudeTestes
         var depoisDoPrimeiroDia = Abertura.AddDays(2);
         for (var i = 0; i < 10; i++)
         {
-            ana = Pix(ana, 1m, depoisDoPrimeiroDia.AddSeconds(i * 30));
+            ana = Pix(ana, 1m, depoisDoPrimeiroDia.AddSeconds(i * 30.0));
         }
 
         var erro = Assert.Throws<RegraVioladaException>(() => Pix(ana, 1m, depoisDoPrimeiroDia.AddMinutes(9)));
