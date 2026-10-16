@@ -87,9 +87,13 @@ jobs:
         run: dotnet restore src/Lastro.AppHost/Lastro.AppHost.csproj --use-lock-file
 
       - name: Varredura dos packages.lock.json
+        # Todos numa chamada só: o lockfile do domínio não tem pacote nenhum (de propósito), e
+        # sozinho ele faria o osv-scanner sair com erro de "nada para varrer".
         run: |
-          find . -name packages.lock.json -not -path "*/obj/*" -print0 \
-            | xargs -0 -n1 ./osv-scanner scan source -L
+          args=()
+          while IFS= read -r -d '' arquivo; do args+=(-L "$arquivo"); done \
+            < <(find . -name packages.lock.json -not -path "*/obj/*" -print0)
+          ./osv-scanner scan source "${args[@]}"
 
   imagem:
     name: Imagem Docker · build
