@@ -115,8 +115,8 @@
       },
       "JasperFx": {
         "type": "Transitive",
-        "resolved": "2.87.1",
-        "contentHash": "DeSLf4+LdJU/u28fA8U6oIL/bfw4yHLOXmDxYvVI1ltFSiyUMyHDtIwh8V4cV3+zQG7HPFQhL/iJz+ridR0lNg==",
+        "resolved": "2.90.1",
+        "contentHash": "SicusPAVu3D+uQy7J6F+7qHgHzQFirWz9dNV3rB3/HUxTAG9YnDN6oFqLfuyNy45M5e9PSq4qHwsIRa2BKHHtQ==",
         "dependencies": {
           "FastExpressionCompiler": "5.4.1",
           "ImTools": "4.0.0",
@@ -132,10 +132,10 @@
       },
       "JasperFx.Events": {
         "type": "Transitive",
-        "resolved": "2.87.1",
-        "contentHash": "2FcNo7/DQs5/3V9tpHKbUCkIuCWGxR2Zno2+pZIvVH96h9hmMWSuTsitZZj1R/gP0Oi5ccC/4bWV37vre+U7Ew==",
+        "resolved": "2.90.1",
+        "contentHash": "+y/z+prDwr7dbxLSUscT7U2fBpeq62gwetntxCGJ+c93/8NGH3gGTA+OxqLQ4aTutdyEhRq63Mj+PNSKwPdfAQ==",
         "dependencies": {
-          "JasperFx": "2.87.1"
+          "JasperFx": "2.90.1"
         }
       },
       "Microsoft.ApplicationInsights": {
@@ -789,7 +789,7 @@
         "type": "Project",
         "dependencies": {
           "Lastro.Dominio": "[1.0.0, )",
-          "Marten": "[9.50.2, )",
+          "Marten": "[9.50.3, )",
           "Microsoft.AspNetCore.Authentication.JwtBearer": "[10.0.13, )",
           "Microsoft.AspNetCore.OpenApi": "[10.0.13, )",
           "Npgsql.OpenTelemetry": "[10.0.3, )",
@@ -806,12 +806,12 @@
       },
       "Marten": {
         "type": "CentralTransitive",
-        "requested": "[9.50.2, )",
-        "resolved": "9.50.2",
-        "contentHash": "ZV7OcE8Jabqr0UvIDJSGpdSQCjqGlHLtsX61K/kYlxfsgKPfZFsxTa0eUyZsXXrLKTChYaRP5deBfdjCZlALvw==",
+        "requested": "[9.50.3, )",
+        "resolved": "9.50.3",
+        "contentHash": "Q5qq4Cw/Y0aaxCR+qiCVIOTRs3+5hSXp/EWRNbn0aVnEK1JjMSka8Gy36+m1I7cu+a1lm0Tv7mQpR6vcbSEt6g==",
         "dependencies": {
-          "JasperFx": "2.87.1",
-          "JasperFx.Events": "2.87.1",
+          "JasperFx": "2.90.1",
+          "JasperFx.Events": "2.90.1",
           "Microsoft.Extensions.Hosting.Abstractions": "10.0.0",
           "Microsoft.IO.RecyclableMemoryStream": "3.0.1",
           "Weasel.Postgresql": "9.45.0",
