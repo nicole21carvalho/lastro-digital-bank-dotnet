@@ -16,6 +16,23 @@ com saldo para cem: passam exatamente cem.
 
 ![Trace de um Pix no painel do Aspire: a requisição, o span "movimentar" e cada consulta ao PostgreSQL](docs/img/aspire-trace-pix.png)
 
+## 🌎 In English
+
+The core of a digital bank where **money never disappears or duplicates**: a double-entry ledger, idempotent Pix
+(Brazil's instant payments) and event sourcing on PostgreSQL. A thousand simultaneous Pix from the same account, with
+balance for a hundred: exactly a hundred go through.
+
+- **Double-entry ledger** with event sourcing (Marten) and CQRS: the sum of all balances is always zero.
+- **Pix**: DICT-style keys, the Central Bank's night-time limit, and transfers to other banks through a saga with an
+  outbox, refunds and HMAC-signed notifications.
+- **Idempotency and concurrency proven** against a real PostgreSQL, including property-based tests (FsCheck).
+- **Bank-grade security**: passkey login (Keycloak), account ownership taken from the token, rate limiting,
+  anti-fraud rules and an audit trail.
+- One command starts everything with .NET Aspire. 130 tests, CodeQL and dependency scanning in CI.
+  *.NET 10 · C# · Marten · PostgreSQL · Keycloak · .NET Aspire · OpenTelemetry.*
+
+*The rest of this README is in Portuguese.*
+
 ## Como o dinheiro anda
 
 ```
