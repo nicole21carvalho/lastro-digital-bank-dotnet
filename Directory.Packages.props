@@ -6,7 +6,7 @@
   </PropertyGroup>
   <ItemGroup>
     <!-- Event store e documentos sobre o PostgreSQL. -->
-    <PackageVersion Include="Marten" Version="9.50.2" />
+    <PackageVersion Include="Marten" Version="9.51.0" />
     <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
     <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
     <!-- Observabilidade (OpenTelemetry) -->
