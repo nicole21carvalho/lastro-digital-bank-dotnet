@@ -7,8 +7,8 @@
   <ItemGroup>
     <!-- Event store e documentos sobre o PostgreSQL. -->
     <PackageVersion Include="Marten" Version="9.50.2" />
-    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.13" />
-    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.OpenApi" Version="10.0.14" />
+    <PackageVersion Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.14" />
     <!-- Observabilidade (OpenTelemetry) -->
     <PackageVersion Include="OpenTelemetry.Extensions.Hosting" Version="1.19.1" />
     <PackageVersion Include="OpenTelemetry.Exporter.OpenTelemetryProtocol" Version="1.19.1" />
@@ -24,7 +24,7 @@
     <!-- Testes (xUnit v3 na Microsoft.Testing.Platform, ligada no global.json) -->
     <PackageVersion Include="xunit.v3" Version="4.0.2" />
     <PackageVersion Include="FsCheck.Xunit.v3" Version="3.4.0" />
-    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.13" />
+    <PackageVersion Include="Microsoft.AspNetCore.Mvc.Testing" Version="10.0.14" />
     <PackageVersion Include="Microsoft.Extensions.TimeProvider.Testing" Version="10.11.0" />
     <PackageVersion Include="Testcontainers.PostgreSql" Version="4.16.0" />
   </ItemGroup>
