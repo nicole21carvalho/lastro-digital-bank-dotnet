@@ -1,6 +1,6 @@
 # A API do Lastro numa imagem enxuta.
 # Etapa 1: compila com o SDK, com as versões travadas pelos packages.lock.json.
-FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
+FROM mcr.microsoft.com/dotnet/sdk:11.0 AS build
 ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 DOTNET_NOLOGO=1
 WORKDIR /src
 # Primeiro só o que define as dependências (camada em cache enquanto elas não mudam)...
